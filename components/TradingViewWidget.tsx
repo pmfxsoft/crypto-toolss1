@@ -9,10 +9,12 @@ declare global {
 
 interface TradingViewWidgetProps {
   isLogScale: boolean;
+  symbol: string;
 }
 
-const TradingViewWidget: React.FC<TradingViewWidgetProps> = ({ isLogScale }) => {
-  const containerId = useRef("tradingview_chart_container");
+const TradingViewWidget: React.FC<TradingViewWidgetProps> = ({ isLogScale, symbol }) => {
+  // Generate a unique ID for the container based on the symbol
+  const containerId = useRef(`tv_chart_${symbol.replace(/[^a-zA-Z0-9]/g, '_')}`);
 
   useEffect(() => {
     // Ensure the container exists and script is loaded
@@ -24,7 +26,7 @@ const TradingViewWidget: React.FC<TradingViewWidgetProps> = ({ isLogScale }) => 
 
       new window.TradingView.widget({
         autosize: true,
-        symbol: "BITSTAMP:BTCUSD",
+        symbol: symbol,
         interval: "1M", // Monthly timeframe
         timezone: "Etc/UTC",
         theme: "light", // White theme
@@ -54,10 +56,10 @@ const TradingViewWidget: React.FC<TradingViewWidgetProps> = ({ isLogScale }) => 
         }
       });
     }
-  }, [isLogScale]); // Re-run when isLogScale changes
+  }, [isLogScale, symbol]); // Re-run when isLogScale or symbol changes
 
   return (
-    <div className="w-full h-[70vh] md:h-[75vh] bg-white rounded-xl shadow-lg overflow-hidden border border-gray-200">
+    <div className="w-full h-[450px] lg:h-[500px] bg-white rounded-xl shadow-lg overflow-hidden border border-gray-200">
       <div id={containerId.current} className="h-full w-full" />
     </div>
   );
