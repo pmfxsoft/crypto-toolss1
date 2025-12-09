@@ -13,8 +13,10 @@ interface TradingViewWidgetProps {
 }
 
 const TradingViewWidget: React.FC<TradingViewWidgetProps> = ({ isLogScale, symbol }) => {
-  // Generate a unique ID for the container based on the symbol
-  const containerId = useRef(`tv_chart_${symbol.replace(/[^a-zA-Z0-9]/g, '_')}`);
+  // Generate a unique ID for the container. 
+  // We use a random suffix because the same symbol might be remounted or used in different contexts
+  // although in this grid, symbol is usually unique.
+  const containerId = useRef(`tv_${symbol.replace(/[^a-zA-Z0-9]/g, '')}_${Math.random().toString(36).substr(2, 9)}`);
 
   useEffect(() => {
     // Ensure the container exists and script is loaded
@@ -50,8 +52,8 @@ const TradingViewWidget: React.FC<TradingViewWidgetProps> = ({ isLogScale, symbo
           "mainSeriesProperties.priceAxisProperties.log": isLogScale,
           "mainSeriesProperties.showCountdown": true, // Show candle countdown
           "paneProperties.background": "#ffffff",
-          "paneProperties.vertGridProperties.color": "#f0f0f0",
-          "paneProperties.horzGridProperties.color": "#f0f0f0",
+          "paneProperties.vertGridProperties.color": "#f8f9fa",
+          "paneProperties.horzGridProperties.color": "#f8f9fa",
           "scalesProperties.textColor": "#333333",
         }
       });
@@ -59,7 +61,7 @@ const TradingViewWidget: React.FC<TradingViewWidgetProps> = ({ isLogScale, symbo
   }, [isLogScale, symbol]); // Re-run when isLogScale or symbol changes
 
   return (
-    <div className="w-full h-[450px] lg:h-[500px] bg-white rounded-xl shadow-lg overflow-hidden border border-gray-200">
+    <div className="w-full h-full border-t border-gray-100">
       <div id={containerId.current} className="h-full w-full" />
     </div>
   );
