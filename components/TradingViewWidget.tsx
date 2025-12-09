@@ -60,8 +60,9 @@ const TradingViewWidget: React.FC<TradingViewWidgetProps> = ({ isLogScale, symbo
     }
   }, [isLogScale, symbol]); // Re-run when isLogScale or symbol changes
 
+  // h-full and w-full are critical for filling the container, especially during fullscreen
   return (
-    <div className="w-full h-full border-t border-gray-100">
+    <div className="w-full h-full bg-white">
       <div id={containerId.current} className="h-full w-full" />
     </div>
   );

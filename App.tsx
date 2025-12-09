@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import TradingViewWidget from './components/TradingViewWidget';
 
 // Interface for CoinGecko Data
@@ -23,14 +23,34 @@ interface CoinData {
   low_24h: number;
 }
 
+// List of stablecoins to exclude
+const STABLE_COINS = [
+  'usdt', 'usdc', 'dai', 'fdusd', 'tusd', 'usdd', 
+  'pyusd', 'usde', 'frax', 'busd', 'gusd', 'usdp', 
+  'eurs', 'lusd', 'susd', 'usds', 'crvusd', 'mim', 
+  'alusd', 'dola', 'fei', 'ustc', 'gemini-dollar'
+];
+
 const App: React.FC = () => {
   const [isLogScale, setIsLogScale] = useState(true);
-  const [coins, setCoins] = useState<CoinData[]>([]);
+  const [coins, setCoins] = useState<CoinData[]>([]); // Raw fetched data (buffer)
+  const [removedCoinIds, setRemovedCoinIds] = useState<Set<string>>(new Set()); // Persist removed IDs
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // State for Pagination Tooltip
+  const [hoveredPageInfo, setHoveredPageInfo] = useState<{ page: number; rect: DOMRect } | null>(null);
+  const [previewAvgCap, setPreviewAvgCap] = useState<number | null>(null);
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  
+  // Refs for debouncing hover fetch
+  const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const currentHoveredPageRef = useRef<number | null>(null);
 
-  const PER_PAGE = 12;
+  const DISPLAY_COUNT = 12;
+  // Fetch more than needed to create a buffer for deletions/stablecoins
+  const FETCH_PER_PAGE = 24; 
   // Estimate for 5000+ coins. 5000 / 12 = ~417 pages.
   const TOTAL_PAGES = 417;
 
@@ -40,9 +60,9 @@ const App: React.FC = () => {
       setLoading(true);
       setError(null);
       try {
-        // Added price_change_percentage parameter to fetch 7d, 30d, 1y data
+        // Fetch a larger batch (FETCH_PER_PAGE) to handle filtering and deletions
         const response = await fetch(
-          `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${PER_PAGE}&page=${page}&sparkline=false&price_change_percentage=24h,7d,30d,1y`
+          `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${FETCH_PER_PAGE}&page=${page}&sparkline=false&price_change_percentage=24h,7d,30d,1y`
         );
         
         if (!response.ok) {
@@ -53,7 +73,14 @@ const App: React.FC = () => {
         }
 
         const data = await response.json();
-        setCoins(data);
+        
+        // Initial filter for stablecoins (we still filter removedCoins later)
+        const filteredData = data.filter((coin: CoinData) => 
+            !STABLE_COINS.includes(coin.symbol.toLowerCase()) && 
+            !STABLE_COINS.includes(coin.id.toLowerCase())
+        );
+
+        setCoins(filteredData);
       } catch (err: any) {
         setError(err.message || "خطایی رخ داده است");
       } finally {
@@ -66,6 +93,13 @@ const App: React.FC = () => {
     // Scroll to top on page change
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [page]);
+
+  // Derive the coins to display from the buffer
+  const visibleCoins = useMemo(() => {
+    return coins
+      .filter((coin) => !removedCoinIds.has(coin.id))
+      .slice(0, DISPLAY_COUNT);
+  }, [coins, removedCoinIds]);
 
   // Format currency
   const formatCurrency = (value: number) => {
@@ -86,46 +120,106 @@ const App: React.FC = () => {
     }).format(value);
   };
   
-  // Format Regular Numbers
-  const formatNumber = (value: number) => {
-    if (value === null || value === undefined) return '-';
-    return new Intl.NumberFormat('en-US', {
-        maximumFractionDigits: 0
-    }).format(value);
-  }
-
   // Helper to map CoinGecko symbol to TradingView Symbol
-  // Removed explicit 'BINANCE:' prefix to allow TradingView to select the best exchange (Binance, KuCoin, MEXC, etc.) based on volume.
   const getTradingViewSymbol = (coinSymbol: string) => {
     if (coinSymbol.toLowerCase() === 'usdt') return 'USDCUSDT'; 
     return `${coinSymbol.toUpperCase()}USDT`;
   };
 
-  // Generate page numbers for pagination
+  // Generate ALL page numbers (no truncation)
   const getPageNumbers = () => {
-    const pages = [];
-    const maxVisible = 5; 
-
-    if (TOTAL_PAGES <= maxVisible + 2) {
-      for (let i = 1; i <= TOTAL_PAGES; i++) pages.push(i);
-    } else {
-      pages.push(1);
-      if (page > 3) pages.push('...');
-      let start = Math.max(2, page - 1);
-      let end = Math.min(TOTAL_PAGES - 1, page + 1);
-      if (page < 4) end = 4;
-      if (page > TOTAL_PAGES - 3) start = TOTAL_PAGES - 3;
-      for (let i = start; i <= end; i++) pages.push(i);
-      if (page < TOTAL_PAGES - 2) pages.push('...');
-      pages.push(TOTAL_PAGES);
-    }
-    return pages;
+    return Array.from({ length: TOTAL_PAGES }, (_, i) => i + 1);
   };
 
   // Helper for percentage color
   const getPercentClass = (val: number | null | undefined) => {
       if (val === null || val === undefined) return 'text-gray-500';
       return val >= 0 ? 'text-green-600' : 'text-red-600';
+  };
+
+  // Toggle Fullscreen
+  const toggleFullscreen = (id: string) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+
+    if (document.fullscreenElement) {
+        document.exitFullscreen();
+    } else {
+        el.requestFullscreen().catch(err => {
+            console.error(`Error attempting to enable full-screen mode: ${err.message}`);
+        });
+    }
+  };
+
+  // Remove Coin
+  const removeCoin = (coinId: string) => {
+    setRemovedCoinIds((prev) => {
+      const newSet = new Set(prev);
+      newSet.add(coinId);
+      return newSet;
+    });
+  };
+
+  // Handle Mouse Enter on Page Number
+  const onPageEnter = (pageNum: number, e: React.MouseEvent) => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      setHoveredPageInfo({ page: pageNum, rect });
+      currentHoveredPageRef.current = pageNum;
+
+      if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+      
+      setPreviewAvgCap(null);
+      setIsPreviewLoading(true);
+
+      // If hovering current page, estimate from visible coins
+      if (pageNum === page && visibleCoins.length > 0) {
+          const total = visibleCoins.reduce((acc, c) => acc + c.market_cap, 0);
+          setPreviewAvgCap(total / visibleCoins.length);
+          setIsPreviewLoading(false);
+          return;
+      }
+
+      // Debounce fetch for other pages
+      hoverTimeoutRef.current = setTimeout(async () => {
+          if (currentHoveredPageRef.current !== pageNum) return;
+
+          try {
+              // Fetch a small batch for tooltip stats
+              const response = await fetch(
+                  `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=12&page=${pageNum}&sparkline=false`
+              );
+              
+              if (!response.ok) throw new Error("Fetch failed");
+              
+              const data = await response.json();
+              if (currentHoveredPageRef.current === pageNum && data && data.length > 0) {
+                  const filtered = data.filter((c: any) => !STABLE_COINS.includes(c.symbol.toLowerCase()));
+                  if (filtered.length > 0) {
+                      const total = filtered.reduce((acc: any, c: any) => acc + c.market_cap, 0);
+                      setPreviewAvgCap(total / filtered.length);
+                  } else {
+                      setPreviewAvgCap(0);
+                  }
+              } else {
+                  setPreviewAvgCap(0);
+              }
+          } catch (error) {
+              console.error("Preview fetch error", error);
+              setPreviewAvgCap(null); 
+          } finally {
+              if (currentHoveredPageRef.current === pageNum) {
+                  setIsPreviewLoading(false);
+              }
+          }
+      }, 400); 
+  };
+
+  const onPageLeave = () => {
+      if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+      currentHoveredPageRef.current = null;
+      setHoveredPageInfo(null);
+      setPreviewAvgCap(null);
+      setIsPreviewLoading(false);
   };
 
   return (
@@ -177,14 +271,29 @@ const App: React.FC = () => {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 w-full">
-            {coins.map((coin) => {
+            {visibleCoins.map((coin) => {
               // Calculate percentage needed to reach ATH
-              // Formula: (ATH - Current) / Current * 100
               const recoveryToAth = coin.current_price && coin.ath ? ((coin.ath - coin.current_price) / coin.current_price) * 100 : 0;
-              
+              const chartContainerId = `chart-container-${coin.id}`;
+
               return (
-              <div key={coin.id} className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden flex flex-col aspect-square">
+              <div key={coin.id} className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden flex flex-col aspect-square relative group">
                 
+                {/* Remove Button */}
+                <button 
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        removeCoin(coin.id);
+                    }}
+                    className="absolute top-2 right-2 bg-white/90 hover:bg-red-50 text-gray-400 hover:text-red-500 p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-all duration-200 z-30 shadow-sm border border-transparent hover:border-red-100"
+                    title="حذف این ارز"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+
                 {/* Professional Card Header & Stats */}
                 <div className="p-4 border-b border-gray-200 bg-white flex-shrink-0">
                     
@@ -200,7 +309,7 @@ const App: React.FC = () => {
                                  <span className="text-sm text-gray-500 font-semibold uppercase">{coin.symbol}</span>
                              </div>
                         </div>
-                        <div className="text-right">
+                        <div className="text-right pr-8">
                             <div className="text-2xl font-extrabold text-gray-900 font-mono tracking-tight">
                                 {formatCurrency(coin.current_price)}
                             </div>
@@ -274,11 +383,24 @@ const App: React.FC = () => {
                 </div>
 
                 {/* Chart Area */}
-                <div className="flex-grow bg-white relative w-full overflow-hidden border-t border-gray-100">
+                <div id={chartContainerId} className="flex-grow bg-white relative w-full overflow-hidden border-t border-gray-100 group">
                   <TradingViewWidget 
                     isLogScale={isLogScale} 
                     symbol={getTradingViewSymbol(coin.symbol)} 
                   />
+                  {/* Fullscreen Button */}
+                  <button
+                    onClick={() => toggleFullscreen(chartContainerId)}
+                    className="absolute top-2 right-2 bg-white bg-opacity-90 hover:bg-opacity-100 p-1.5 rounded-md shadow-md border border-gray-200 text-gray-600 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-all duration-200 z-10"
+                    title="تمام صفحه"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="15 3 21 3 21 9"></polyline>
+                        <polyline points="9 21 3 21 3 15"></polyline>
+                        <line x1="21" y1="3" x2="14" y2="10"></line>
+                        <line x1="3" y1="21" x2="10" y2="14"></line>
+                    </svg>
+                  </button>
                 </div>
               </div>
             )})}
@@ -288,43 +410,86 @@ const App: React.FC = () => {
       
       {/* Bottom Pagination */}
       <footer className="w-full bg-white border-t border-gray-200 p-4 sticky bottom-0 z-10 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
-        <div className="flex flex-col sm:flex-row justify-center items-center gap-4 max-w-full overflow-x-auto">
-            <button 
-              disabled={page === 1 || loading}
-              onClick={() => setPage(p => Math.max(1, p - 1))}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg shadow disabled:opacity-50 hover:bg-blue-700 transition text-sm flex-shrink-0"
-            >
-              قبلی
-            </button>
+        <div className="flex flex-col gap-4">
             
-            <div className="flex items-center gap-1 flex-wrap justify-center">
-              {getPageNumbers().map((p, index) => (
-                <button
-                  key={index}
-                  onClick={() => typeof p === 'number' ? setPage(p) : null}
-                  disabled={p === '...' || loading}
-                  className={`w-8 h-8 flex items-center justify-center rounded-md text-sm font-medium transition-colors
-                    ${p === page 
-                      ? 'bg-blue-100 text-blue-700 border border-blue-200 font-bold' 
-                      : p === '...' 
-                        ? 'cursor-default text-gray-400' 
-                        : 'text-gray-600 hover:bg-gray-100'
-                    }`}
-                >
-                  {p}
-                </button>
-              ))}
+            <div className="flex items-center gap-1 overflow-x-auto w-full px-2 pb-2" style={{ scrollbarWidth: 'thin' }}>
+              {getPageNumbers().map((p) => {
+                  return (
+                    <button
+                      key={p}
+                      onClick={() => setPage(p)}
+                      onMouseEnter={(e) => onPageEnter(p, e)}
+                      onMouseLeave={onPageLeave}
+                      disabled={loading}
+                      className={`w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-md text-sm font-medium transition-colors border
+                        ${p === page 
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-md' 
+                          : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-100 hover:border-gray-300'
+                        }`}
+                    >
+                      {p}
+                    </button>
+                  );
+              })}
             </div>
-
-            <button 
-              disabled={page === TOTAL_PAGES || loading}
-              onClick={() => setPage(p => Math.min(TOTAL_PAGES, p + 1))}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg shadow disabled:opacity-50 hover:bg-blue-700 transition text-sm flex-shrink-0"
-            >
-              بعدی
-            </button>
+            
+             <div className="flex justify-between items-center text-sm text-gray-500 px-2">
+                 <span>نمایش 1 تا {TOTAL_PAGES} از {TOTAL_PAGES} صفحه</span>
+                 <div className="flex gap-2">
+                     <button 
+                        disabled={page === 1 || loading}
+                        onClick={() => setPage(p => Math.max(1, p - 1))}
+                        className="px-3 py-1 bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50"
+                     >
+                        قبلی
+                     </button>
+                     <button 
+                        disabled={page === TOTAL_PAGES || loading}
+                        onClick={() => setPage(p => Math.min(TOTAL_PAGES, p + 1))}
+                        className="px-3 py-1 bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50"
+                     >
+                        بعدی
+                     </button>
+                 </div>
+             </div>
         </div>
       </footer>
+
+      {/* Pagination Tooltip Portal/Overlay */}
+      {hoveredPageInfo && (
+          <div 
+            className="fixed z-50 bg-gray-900 text-white text-xs rounded px-3 py-2 shadow-xl border border-gray-700 pointer-events-none"
+            style={{
+                top: `${hoveredPageInfo.rect.top - 70}px`,
+                left: `${hoveredPageInfo.rect.left + (hoveredPageInfo.rect.width / 2)}px`,
+                transform: 'translateX(-50%)',
+                minWidth: '160px'
+            }}
+          >
+              {(() => {
+                   const startRank = (hoveredPageInfo.page - 1) * DISPLAY_COUNT + 1;
+                   const endRank = hoveredPageInfo.page * DISPLAY_COUNT;
+                  return (
+                      <div className="flex flex-col gap-1 text-center">
+                          <div className="font-bold text-yellow-400 mb-1 border-b border-gray-700 pb-1">صفحه {hoveredPageInfo.page}</div>
+                          <div className="flex justify-between">
+                              <span className="text-gray-400">رنک‌ها (تخمینی):</span>
+                              <span className="font-mono">{startRank} - {endRank}</span>
+                          </div>
+                          <div className="flex flex-col mt-1 bg-gray-800 rounded p-1">
+                              <span className="text-gray-400 text-[10px] mb-0.5">میانگین مارکت کپ:</span>
+                              <span className={`font-bold ${isPreviewLoading ? 'text-gray-500 animate-pulse' : 'text-green-400'}`}>
+                                  {isPreviewLoading 
+                                    ? 'در حال محاسبه...' 
+                                    : previewAvgCap ? `$${formatCompact(previewAvgCap)}` : 'نامشخص'}
+                              </span>
+                          </div>
+                      </div>
+                  );
+              })()}
+              <div className="absolute top-full left-1/2 -ml-1 border-4 border-transparent border-t-gray-900"></div>
+          </div>
+      )}
     </div>
   );
 };
