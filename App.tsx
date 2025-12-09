@@ -94,10 +94,11 @@ const App: React.FC = () => {
     }).format(value);
   }
 
-  // Helper to map CoinGecko symbol to TradingView Symbol (Binance USDT pair preference)
+  // Helper to map CoinGecko symbol to TradingView Symbol
+  // Removed explicit 'BINANCE:' prefix to allow TradingView to select the best exchange (Binance, KuCoin, MEXC, etc.) based on volume.
   const getTradingViewSymbol = (coinSymbol: string) => {
-    if (coinSymbol.toLowerCase() === 'usdt') return 'BINANCE:USDCUSDT'; 
-    return `BINANCE:${coinSymbol.toUpperCase()}USDT`;
+    if (coinSymbol.toLowerCase() === 'usdt') return 'USDCUSDT'; 
+    return `${coinSymbol.toUpperCase()}USDT`;
   };
 
   // Generate page numbers for pagination
@@ -133,7 +134,7 @@ const App: React.FC = () => {
       <header className="w-full bg-white shadow-sm sticky top-0 z-20 px-4 py-3 border-b border-gray-200">
         <div className="flex flex-col md:flex-row items-center justify-between max-w-full mx-auto">
           <div className="flex items-center mb-2 md:mb-0">
-            <h1 className="text-xl md:text-2xl font-bold text-gray-900 ml-4">
+            <h1 className="text-xl md:text-2xl font-bold text-gray-900 mr-4">
                بازار حرفه‌ای ارزهای دیجیتال
             </h1>
             <span className="text-sm text-gray-500 bg-gray-100 px-2 py-1 rounded">
@@ -176,87 +177,98 @@ const App: React.FC = () => {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 w-full">
-            {coins.map((coin) => (
+            {coins.map((coin) => {
+              // Calculate percentage needed to reach ATH
+              // Formula: (ATH - Current) / Current * 100
+              const recoveryToAth = coin.current_price && coin.ath ? ((coin.ath - coin.current_price) / coin.current_price) * 100 : 0;
+              
+              return (
               <div key={coin.id} className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden flex flex-col aspect-square">
                 
                 {/* Professional Card Header & Stats */}
-                <div className="p-3 border-b border-gray-200 bg-white flex-shrink-0">
+                <div className="p-4 border-b border-gray-200 bg-white flex-shrink-0">
                     
                     {/* Top Row: Identity & Price */}
-                    <div className="flex justify-between items-start mb-3">
-                        <div className="flex items-center gap-2">
-                             <div className="flex flex-col items-center justify-center bg-gray-100 w-10 h-10 rounded-full border border-gray-200">
-                                <span className="text-xs font-bold text-gray-500">#{coin.market_cap_rank}</span>
+                    <div className="flex justify-between items-start mb-4">
+                        <div className="flex items-center gap-3">
+                             <div className="flex flex-col items-center justify-center bg-gray-100 w-12 h-12 rounded-full border border-gray-200">
+                                <span className="text-sm font-bold text-gray-500">#{coin.market_cap_rank}</span>
                              </div>
-                             <img src={coin.image} alt={coin.name} className="w-8 h-8 rounded-full" />
+                             <img src={coin.image} alt={coin.name} className="w-10 h-10 rounded-full" />
                              <div>
-                                 <h2 className="text-base font-bold text-gray-900 leading-tight">{coin.name}</h2>
-                                 <span className="text-xs text-gray-500 font-semibold uppercase">{coin.symbol}</span>
+                                 <h2 className="text-lg font-bold text-gray-900 leading-tight">{coin.name}</h2>
+                                 <span className="text-sm text-gray-500 font-semibold uppercase">{coin.symbol}</span>
                              </div>
                         </div>
-                        <div className="text-left">
-                            <div className="text-xl font-extrabold text-gray-900 font-mono tracking-tight">
+                        <div className="text-right">
+                            <div className="text-2xl font-extrabold text-gray-900 font-mono tracking-tight">
                                 {formatCurrency(coin.current_price)}
                             </div>
-                            <div className={`text-xs font-bold text-right ${getPercentClass(coin.price_change_percentage_24h)} dir-ltr`}>
+                            <div className={`text-sm font-bold ${getPercentClass(coin.price_change_percentage_24h)}`}>
                                 {coin.price_change_percentage_24h?.toFixed(2)}% (24h)
                             </div>
                         </div>
                     </div>
 
-                    {/* Performance Strip */}
-                    <div className="grid grid-cols-4 gap-2 text-center text-[10px] mb-3 bg-gray-50 p-2 rounded-lg border border-gray-100">
+                    {/* Performance Strip - 5 Columns */}
+                    <div className="grid grid-cols-5 gap-1 text-center text-xs mb-4 bg-gray-50 p-2 rounded-lg border border-gray-100">
                         <div className="flex flex-col">
-                            <span className="text-gray-400 mb-0.5">7d</span>
-                            <span className={`font-bold ${getPercentClass(coin.price_change_percentage_7d_in_currency)} dir-ltr`}>
+                            <span className="text-gray-400 mb-1">7d</span>
+                            <span className={`font-bold text-sm ${getPercentClass(coin.price_change_percentage_7d_in_currency)}`}>
                                 {coin.price_change_percentage_7d_in_currency?.toFixed(2)}%
                             </span>
                         </div>
-                        <div className="flex flex-col border-r border-gray-200 border-l px-1">
-                            <span className="text-gray-400 mb-0.5">30d</span>
-                            <span className={`font-bold ${getPercentClass(coin.price_change_percentage_30d_in_currency)} dir-ltr`}>
+                        <div className="flex flex-col border-l border-gray-200 pl-1">
+                            <span className="text-gray-400 mb-1">30d</span>
+                            <span className={`font-bold text-sm ${getPercentClass(coin.price_change_percentage_30d_in_currency)}`}>
                                 {coin.price_change_percentage_30d_in_currency?.toFixed(2)}%
                             </span>
                         </div>
                         <div className="flex flex-col border-l border-gray-200 pl-1">
-                            <span className="text-gray-400 mb-0.5">1y</span>
-                            <span className={`font-bold ${getPercentClass(coin.price_change_percentage_1y_in_currency)} dir-ltr`}>
+                            <span className="text-gray-400 mb-1">1y</span>
+                            <span className={`font-bold text-sm ${getPercentClass(coin.price_change_percentage_1y_in_currency)}`}>
                                 {coin.price_change_percentage_1y_in_currency?.toFixed(2)}%
                             </span>
                         </div>
-                        <div className="flex flex-col">
-                            <span className="text-gray-400 mb-0.5">ATH</span>
-                            <span className={`font-bold ${getPercentClass(coin.ath_change_percentage)} dir-ltr`}>
-                                {coin.ath_change_percentage?.toFixed(2)}%
+                        <div className="flex flex-col border-l border-gray-200 pl-1">
+                            <span className="text-gray-400 mb-1">ATH</span>
+                            <span className={`font-bold text-sm ${getPercentClass(coin.ath_change_percentage)}`}>
+                                {coin.ath_change_percentage?.toFixed(1)}%
+                            </span>
+                        </div>
+                        <div className="flex flex-col border-l border-gray-200 pl-1">
+                            <span className="text-gray-400 mb-1 font-medium">To ATH</span>
+                            <span className="font-bold text-sm text-green-600">
+                                +{recoveryToAth.toFixed(1)}%
                             </span>
                         </div>
                     </div>
 
                     {/* Detailed Stats Grid */}
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-[11px]">
-                         <div className="flex justify-between items-center border-b border-gray-50 pb-1">
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+                         <div className="flex justify-between items-center border-b border-gray-50 pb-2">
                              <span className="text-gray-500">Market Cap</span>
-                             <span className="font-bold text-gray-800 dir-ltr">${formatCompact(coin.market_cap)}</span>
+                             <span className="font-bold text-gray-900">${formatCompact(coin.market_cap)}</span>
                          </div>
-                         <div className="flex justify-between items-center border-b border-gray-50 pb-1">
+                         <div className="flex justify-between items-center border-b border-gray-50 pb-2">
                              <span className="text-gray-500">Volume (24h)</span>
-                             <span className="font-bold text-gray-800 dir-ltr">${formatCompact(coin.total_volume)}</span>
+                             <span className="font-bold text-gray-900">${formatCompact(coin.total_volume)}</span>
                          </div>
-                         <div className="flex justify-between items-center border-b border-gray-50 pb-1">
+                         <div className="flex justify-between items-center border-b border-gray-50 pb-2">
                              <span className="text-gray-500">High (24h)</span>
-                             <span className="font-bold text-gray-800 dir-ltr">{formatCurrency(coin.high_24h)}</span>
+                             <span className="font-bold text-gray-900">{formatCurrency(coin.high_24h)}</span>
                          </div>
-                         <div className="flex justify-between items-center border-b border-gray-50 pb-1">
+                         <div className="flex justify-between items-center border-b border-gray-50 pb-2">
                              <span className="text-gray-500">Low (24h)</span>
-                             <span className="font-bold text-gray-800 dir-ltr">{formatCurrency(coin.low_24h)}</span>
+                             <span className="font-bold text-gray-900">{formatCurrency(coin.low_24h)}</span>
                          </div>
                          <div className="flex justify-between items-center">
                              <span className="text-gray-500">Circ. Supply</span>
-                             <span className="font-bold text-gray-800 dir-ltr">{formatCompact(coin.circulating_supply)}</span>
+                             <span className="font-bold text-gray-900">{formatCompact(coin.circulating_supply)}</span>
                          </div>
                          <div className="flex justify-between items-center">
                              <span className="text-gray-500">Total Supply</span>
-                             <span className="font-bold text-gray-800 dir-ltr">{coin.total_supply ? formatCompact(coin.total_supply) : '∞'}</span>
+                             <span className="font-bold text-gray-900">{coin.total_supply ? formatCompact(coin.total_supply) : '∞'}</span>
                          </div>
                     </div>
                 </div>
@@ -269,7 +281,7 @@ const App: React.FC = () => {
                   />
                 </div>
               </div>
-            ))}
+            )})}
           </div>
         )}
       </main>
@@ -285,7 +297,7 @@ const App: React.FC = () => {
               قبلی
             </button>
             
-            <div className="flex items-center gap-1 flex-wrap justify-center dir-ltr">
+            <div className="flex items-center gap-1 flex-wrap justify-center">
               {getPageNumbers().map((p, index) => (
                 <button
                   key={index}
