@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import TradingViewWidget from './components/TradingViewWidget';
+import { auth, db } from './firebase';
+import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { doc, onSnapshot, setDoc, getDoc } from 'firebase/firestore';
 
 // Interface for CoinGecko Data
 interface CoinData {
@@ -41,6 +44,8 @@ const TIMEFRAMES = [
   { label: '1M', value: '1M' },
 ];
 
+const LOCAL_STORAGE_KEY = 'crypto_layout_preference_v1';
+
 const App: React.FC = () => {
   const [isLogScale, setIsLogScale] = useState(true);
   const [interval, setInterval] = useState("1M"); // Default Timeframe
@@ -50,6 +55,7 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [retryTrigger, setRetryTrigger] = useState(0); // For manual retry
+  const [user, setUser] = useState<any>(null); // Firebase User
   
   // State for Pagination Tooltip
   const [hoveredPageInfo, setHoveredPageInfo] = useState<{ page: number; rect: DOMRect } | null>(null);
@@ -61,11 +67,76 @@ const App: React.FC = () => {
   const currentHoveredPageRef = useRef<number | null>(null);
   const tooltipAbortControllerRef = useRef<AbortController | null>(null);
 
+  // File Input Ref for Import
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const DISPLAY_COUNT = 12;
   // Fetch slightly more to create a buffer for deletions/stablecoins, but keep it light
   const FETCH_PER_PAGE = 20; 
   // Estimate for 5000+ coins. 5000 / 12 = ~417 pages.
   const TOTAL_PAGES = 417;
+
+  // Load from LocalStorage on mount
+  useEffect(() => {
+      const savedLayout = localStorage.getItem(LOCAL_STORAGE_KEY);
+      if (savedLayout) {
+          try {
+              const parsed = JSON.parse(savedLayout);
+              if (Array.isArray(parsed)) {
+                  setRemovedCoinIds(prev => {
+                      const newSet = new Set(prev);
+                      parsed.forEach((id: string) => newSet.add(id));
+                      return newSet;
+                  });
+              }
+          } catch(e) {
+              console.error("Error loading layout from local storage", e);
+          }
+      }
+  }, []);
+
+  // Firebase Authentication & Database Sync
+  useEffect(() => {
+    // 1. Sign in anonymously
+    signInAnonymously(auth).catch((err) => {
+        // If API key is invalid (default), we just ignore persistence silently
+        if (err.code !== 'auth/invalid-api-key' && err.code !== 'auth/api-key-not-valid') {
+            console.warn("Firebase Auth Error:", err.message);
+        }
+    });
+
+    // 2. Listen for auth state
+    const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      
+      if (currentUser) {
+        // 3. Connect to Firestore for this user
+        const userDocRef = doc(db, 'users', currentUser.uid);
+        
+        const unsubscribeSnapshot = onSnapshot(userDocRef, (docSnap) => {
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                if (data.removedCoinIds && Array.isArray(data.removedCoinIds)) {
+                    setRemovedCoinIds(prev => {
+                        const newSet = new Set(prev);
+                        data.removedCoinIds.forEach((id: string) => newSet.add(id));
+                        return newSet;
+                    });
+                }
+            }
+        }, (err) => {
+            // Permission denied usually means Firestore rules aren't set or DB doesn't exist yet
+            if (err.code !== 'permission-denied') {
+                 console.warn("Firestore Read Error:", err.message);
+            }
+        });
+
+        return () => unsubscribeSnapshot();
+      }
+    });
+
+    return () => unsubscribeAuth();
+  }, []);
 
   // Robust fetch with retry logic, exponential backoff, and AbortSignal support
   const fetchWithRetry = async (url: string, retries = 3, baseBackoff = 1500, signal?: AbortSignal): Promise<any> => {
@@ -229,13 +300,111 @@ const App: React.FC = () => {
     }
   };
 
-  // Remove Coin
-  const removeCoin = (coinId: string) => {
+  // Remove Coin with Firestore & LocalStorage Sync
+  const removeCoin = async (coinId: string) => {
     setRemovedCoinIds((prev) => {
       const newSet = new Set(prev);
       newSet.add(coinId);
+      
+      // Sync to LocalStorage
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(Array.from(newSet)));
+
+      // Sync to Firestore if user is logged in
+      if (user) {
+          const userDocRef = doc(db, 'users', user.uid);
+          setDoc(userDocRef, { removedCoinIds: Array.from(newSet) }, { merge: true })
+            .catch(err => console.error("Error saving to DB:", err));
+      }
+      
       return newSet;
     });
+  };
+
+  // --- Local Storage & File Backup Logic ---
+
+  // Manual Save to LocalStorage (User Triggered)
+  const handleSaveLayout = () => {
+    try {
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(Array.from(removedCoinIds)));
+        alert("چیدمان فعلی با موفقیت در مرورگر ذخیره شد.");
+    } catch (error) {
+        alert("خطا در ذخیره‌سازی.");
+    }
+  };
+
+  // Manual Reset
+  const handleResetLayout = () => {
+      if (window.confirm("آیا مطمئن هستید؟ تمام ارزهای حذف شده بازگردانده می‌شوند.")) {
+          setRemovedCoinIds(new Set());
+          localStorage.removeItem(LOCAL_STORAGE_KEY);
+          // Optional: clear firestore too? keeping it simple for now.
+      }
+  };
+
+  // Export Settings to JSON
+  const handleExportBackup = () => {
+    const data = {
+      removedCoinIds: Array.from(removedCoinIds),
+      exportedAt: new Date().toISOString(),
+      version: 1
+    };
+    
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `crypto-backup-${new Date().toISOString().slice(0,10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  // Import Settings from JSON
+  const handleImportBackup = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const json = JSON.parse(e.target?.result as string);
+        if (json.removedCoinIds && Array.isArray(json.removedCoinIds)) {
+          const newSet = new Set(json.removedCoinIds);
+          
+          setRemovedCoinIds(prev => {
+             const merged = new Set([...Array.from(prev), ...Array.from(newSet)]);
+             // Sync LS
+             localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(Array.from(merged)));
+             return merged;
+          });
+
+          alert(`بازیابی با موفقیت انجام شد! ${json.removedCoinIds.length} ارز به لیست سیاه اضافه شد.`);
+          
+          // Also sync to firebase if connected
+           if (user) {
+              const userDocRef = doc(db, 'users', user.uid);
+              setDoc(userDocRef, { removedCoinIds: Array.from(newSet) }, { merge: true }) // Note: logic here might want to be merge with existing DB data, but for now we trust the file/local
+                .catch(err => console.warn("Error syncing import to DB", err));
+           }
+
+        } else {
+          alert("فرمت فایل نامعتبر است.");
+        }
+      } catch (err) {
+        console.error(err);
+        alert("خطا در خواندن فایل.");
+      }
+      // Reset input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const triggerImportClick = () => {
+    fileInputRef.current?.click();
   };
 
   // Handle Mouse Enter on Page Number
@@ -335,6 +504,73 @@ const App: React.FC = () => {
 
           <div className="flex flex-col md:flex-row items-center gap-4">
             
+            {/* Backup/Restore & Quick Save Group */}
+            <div className="flex items-center gap-2">
+                 {/* Hidden File Input */}
+                 <input 
+                    type="file" 
+                    ref={fileInputRef} 
+                    onChange={handleImportBackup} 
+                    accept=".json" 
+                    className="hidden" 
+                 />
+                 
+                 {/* Quick Save (LocalStorage) */}
+                 <button 
+                    onClick={handleSaveLayout}
+                    className="flex items-center gap-1 bg-green-50 hover:bg-green-100 text-green-700 px-3 py-1.5 rounded-lg border border-green-200 transition-colors text-sm font-medium"
+                    title="ذخیره چیدمان فعلی در مرورگر"
+                 >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                        <polyline points="17 21 17 13 7 13 7 21"></polyline>
+                        <polyline points="7 3 7 8 15 8"></polyline>
+                    </svg>
+                    <span>ذخیره چیدمان</span>
+                 </button>
+
+                 {/* Reset */}
+                 <button 
+                    onClick={handleResetLayout}
+                    className="flex items-center gap-1 bg-red-50 hover:bg-red-100 text-red-700 px-3 py-1.5 rounded-lg border border-red-200 transition-colors text-sm font-medium"
+                    title="بازگشت به تنظیمات اولیه (نمایش همه)"
+                 >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M3 3v5h5"></path>
+                        <path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"></path>
+                    </svg>
+                    <span>بازنشانی</span>
+                 </button>
+
+                 <div className="h-6 w-px bg-gray-300 mx-1"></div>
+
+                 {/* File Export (Small) */}
+                 <button 
+                    onClick={handleExportBackup}
+                    className="p-1.5 bg-gray-50 hover:bg-gray-100 text-gray-600 rounded-md border border-gray-200 transition-colors"
+                    title="دانلود فایل پشتیبان (Export JSON)"
+                 >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                 </button>
+                 
+                 {/* File Import (Small) */}
+                 <button 
+                    onClick={triggerImportClick}
+                    className="p-1.5 bg-gray-50 hover:bg-gray-100 text-gray-600 rounded-md border border-gray-200 transition-colors"
+                    title="بازیابی از فایل (Import JSON)"
+                 >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="17 8 12 3 7 8"></polyline>
+                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                 </button>
+            </div>
+
             {/* Timeframe Selector */}
             <div className="flex items-center bg-gray-100 p-1 rounded-lg border border-gray-200 overflow-x-auto max-w-full">
                 {TIMEFRAMES.map((tf) => (
