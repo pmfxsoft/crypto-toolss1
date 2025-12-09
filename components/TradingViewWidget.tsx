@@ -10,9 +10,10 @@ declare global {
 interface TradingViewWidgetProps {
   isLogScale: boolean;
   symbol: string;
+  interval: string;
 }
 
-const TradingViewWidget: React.FC<TradingViewWidgetProps> = ({ isLogScale, symbol }) => {
+const TradingViewWidget: React.FC<TradingViewWidgetProps> = ({ isLogScale, symbol, interval }) => {
   // Generate a unique ID for the container. 
   // We use a random suffix because the same symbol might be remounted or used in different contexts
   // although in this grid, symbol is usually unique.
@@ -29,7 +30,7 @@ const TradingViewWidget: React.FC<TradingViewWidgetProps> = ({ isLogScale, symbo
       new window.TradingView.widget({
         autosize: true,
         symbol: symbol,
-        interval: "1M", // Monthly timeframe
+        interval: interval, 
         timezone: "Etc/UTC",
         theme: "light", // White theme
         style: "1", // Candles
@@ -43,7 +44,7 @@ const TradingViewWidget: React.FC<TradingViewWidgetProps> = ({ isLogScale, symbo
         // Crucial: Disable local storage to ensure overrides (like log scale) are applied every time
         disabled_features: [
           "use_localstorage_for_settings", 
-          "header_symbol_search", 
+          // "header_symbol_search", // Removed to allow symbol search
           "header_compare",
           "create_volume_indicator_by_default" // Remove volume indicator
         ],
@@ -58,7 +59,7 @@ const TradingViewWidget: React.FC<TradingViewWidgetProps> = ({ isLogScale, symbo
         }
       });
     }
-  }, [isLogScale, symbol]); // Re-run when isLogScale or symbol changes
+  }, [isLogScale, symbol, interval]); // Re-run when props change
 
   // h-full and w-full are critical for filling the container, especially during fullscreen
   return (

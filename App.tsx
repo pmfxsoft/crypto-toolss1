@@ -31,48 +31,115 @@ const STABLE_COINS = [
   'alusd', 'dola', 'fei', 'ustc', 'gemini-dollar'
 ];
 
+// Available Timeframes
+const TIMEFRAMES = [
+  { label: '15m', value: '15' },
+  { label: '1H', value: '60' },
+  { label: '4H', value: '240' },
+  { label: '1D', value: 'D' },
+  { label: '1W', value: 'W' },
+  { label: '1M', value: '1M' },
+];
+
 const App: React.FC = () => {
   const [isLogScale, setIsLogScale] = useState(true);
+  const [interval, setInterval] = useState("1M"); // Default Timeframe
   const [coins, setCoins] = useState<CoinData[]>([]); // Raw fetched data (buffer)
   const [removedCoinIds, setRemovedCoinIds] = useState<Set<string>>(new Set()); // Persist removed IDs
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [retryTrigger, setRetryTrigger] = useState(0); // For manual retry
   
   // State for Pagination Tooltip
   const [hoveredPageInfo, setHoveredPageInfo] = useState<{ page: number; rect: DOMRect } | null>(null);
   const [previewAvgCap, setPreviewAvgCap] = useState<number | null>(null);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   
-  // Refs for debouncing hover fetch
+  // Refs for debouncing hover fetch & aborting requests
   const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentHoveredPageRef = useRef<number | null>(null);
+  const tooltipAbortControllerRef = useRef<AbortController | null>(null);
 
   const DISPLAY_COUNT = 12;
-  // Fetch more than needed to create a buffer for deletions/stablecoins
-  const FETCH_PER_PAGE = 24; 
+  // Fetch slightly more to create a buffer for deletions/stablecoins, but keep it light
+  const FETCH_PER_PAGE = 20; 
   // Estimate for 5000+ coins. 5000 / 12 = ~417 pages.
   const TOTAL_PAGES = 417;
 
+  // Robust fetch with retry logic, exponential backoff, and AbortSignal support
+  const fetchWithRetry = async (url: string, retries = 3, baseBackoff = 1500, signal?: AbortSignal): Promise<any> => {
+    for (let i = 0; i < retries; i++) {
+      try {
+        if (signal?.aborted) {
+            throw new DOMException('Aborted', 'AbortError');
+        }
+
+        const response = await fetch(url, {
+            headers: {
+                'Accept': 'application/json'
+            },
+            mode: 'cors', // Explicitly state CORS
+            signal
+        });
+        
+        if (response.ok) {
+            return await response.json();
+        }
+
+        // If rate limited (429), wait longer with exponential backoff
+        if (response.status === 429) {
+            const waitTime = baseBackoff * Math.pow(2, i + 1); // 3s, 6s, 12s...
+            console.warn(`Rate limit (429). Retrying in ${waitTime}ms...`);
+            await new Promise(r => setTimeout(r, waitTime));
+            continue; // Retry
+        }
+
+        // For other server errors, retry normally
+        if (response.status >= 500) {
+             const waitTime = baseBackoff * Math.pow(2, i);
+             console.warn(`Server error (${response.status}). Retrying in ${waitTime}ms...`);
+             await new Promise(r => setTimeout(r, waitTime));
+             continue;
+        }
+
+        // For 4xx errors (other than 429), throw immediately (e.g. 404)
+        throw new Error(`HTTP Error: ${response.status}`);
+
+      } catch (err: any) {
+        // Don't retry if aborted
+        if (err.name === 'AbortError' || signal?.aborted) {
+            throw err;
+        }
+
+        // If it's the last retry, throw
+        if (i === retries - 1) {
+            throw err;
+        }
+        
+        // Exponential backoff for network errors (Failed to fetch)
+        const waitTime = baseBackoff * Math.pow(2, i);
+        console.log(`Fetch attempt ${i + 1} failed (${err.message}). Retrying in ${waitTime}ms...`);
+        await new Promise(r => setTimeout(r, waitTime));
+      }
+    }
+  };
+
   // Fetch data from CoinGecko
   useEffect(() => {
+    const controller = new AbortController();
+
     const fetchCoins = async () => {
       setLoading(true);
       setError(null);
       try {
-        // Fetch a larger batch (FETCH_PER_PAGE) to handle filtering and deletions
-        const response = await fetch(
-          `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${FETCH_PER_PAGE}&page=${page}&sparkline=false&price_change_percentage=24h,7d,30d,1y`
+        // Fetch a batch to handle filtering and deletions
+        const data = await fetchWithRetry(
+          `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${FETCH_PER_PAGE}&page=${page}&sparkline=false&price_change_percentage=24h,7d,30d,1y`,
+          4, // Increased retries
+          2000, // Initial backoff 2s
+          controller.signal
         );
-        
-        if (!response.ok) {
-          if (response.status === 429) {
-            throw new Error("تعداد درخواست‌ها زیاد است. لطفاً چند لحظه صبر کنید.");
-          }
-          throw new Error("خطا در دریافت اطلاعات");
-        }
-
-        const data = await response.json();
         
         // Initial filter for stablecoins (we still filter removedCoins later)
         const filteredData = data.filter((coin: CoinData) => 
@@ -80,11 +147,18 @@ const App: React.FC = () => {
             !STABLE_COINS.includes(coin.id.toLowerCase())
         );
 
-        setCoins(filteredData);
+        if (!controller.signal.aborted) {
+            setCoins(filteredData);
+        }
       } catch (err: any) {
-        setError(err.message || "خطایی رخ داده است");
+        if (err.name !== 'AbortError') {
+            console.error("Final Fetch Error:", err);
+            setError("اتصال به سرور برقرار نشد. ممکن است محدودیت API اعمال شده باشد. لطفاً کمی صبر کنید و دوباره تلاش کنید.");
+        }
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) {
+            setLoading(false);
+        }
       }
     };
 
@@ -92,7 +166,11 @@ const App: React.FC = () => {
     
     // Scroll to top on page change
     window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, [page]);
+
+    return () => {
+        controller.abort();
+    };
+  }, [page, retryTrigger]);
 
   // Derive the coins to display from the buffer
   const visibleCoins = useMemo(() => {
@@ -166,7 +244,9 @@ const App: React.FC = () => {
       setHoveredPageInfo({ page: pageNum, rect });
       currentHoveredPageRef.current = pageNum;
 
+      // Cancel any pending tooltip logic
       if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+      if (tooltipAbortControllerRef.current) tooltipAbortControllerRef.current.abort();
       
       setPreviewAvgCap(null);
       setIsPreviewLoading(true);
@@ -178,20 +258,29 @@ const App: React.FC = () => {
           setIsPreviewLoading(false);
           return;
       }
+      
+      // If the main list is loading, don't spam tooltip requests
+      if (loading) {
+          // Keep loading state but don't fetch
+          return;
+      }
 
-      // Debounce fetch for other pages
+      // Debounce fetch for other pages - Increased to 700ms to allow mouse movement without requests
       hoverTimeoutRef.current = setTimeout(async () => {
           if (currentHoveredPageRef.current !== pageNum) return;
 
+          const controller = new AbortController();
+          tooltipAbortControllerRef.current = controller;
+
           try {
-              // Fetch a small batch for tooltip stats
-              const response = await fetch(
-                  `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=12&page=${pageNum}&sparkline=false`
+              // Using fetchWithRetry here too but with fewer retries for tooltips
+              const data = await fetchWithRetry(
+                  `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=12&page=${pageNum}&sparkline=false`,
+                  1, // Only 1 retry for tooltip to be snappy or fail silently
+                  1000,
+                  controller.signal
               );
               
-              if (!response.ok) throw new Error("Fetch failed");
-              
-              const data = await response.json();
               if (currentHoveredPageRef.current === pageNum && data && data.length > 0) {
                   const filtered = data.filter((c: any) => !STABLE_COINS.includes(c.symbol.toLowerCase()));
                   if (filtered.length > 0) {
@@ -203,19 +292,27 @@ const App: React.FC = () => {
               } else {
                   setPreviewAvgCap(0);
               }
-          } catch (error) {
-              console.error("Preview fetch error", error);
-              setPreviewAvgCap(null); 
+          } catch (error: any) {
+              // Silently fail for tooltips unless it's a real logic error
+              if (error.name !== 'AbortError') {
+                 // Only log strictly necessary errors
+                 if (error.message !== 'Failed to fetch') {
+                    console.warn("Preview fetch warning:", error.message);
+                 }
+                 setPreviewAvgCap(null); 
+              }
           } finally {
               if (currentHoveredPageRef.current === pageNum) {
                   setIsPreviewLoading(false);
               }
           }
-      }, 400); 
+      }, 700); 
   };
 
   const onPageLeave = () => {
       if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+      if (tooltipAbortControllerRef.current) tooltipAbortControllerRef.current.abort();
+      
       currentHoveredPageRef.current = null;
       setHoveredPageInfo(null);
       setPreviewAvgCap(null);
@@ -226,8 +323,8 @@ const App: React.FC = () => {
     <div className="min-h-screen bg-gray-100 text-gray-800 flex flex-col items-center font-sans">
       {/* Header */}
       <header className="w-full bg-white shadow-sm sticky top-0 z-20 px-4 py-3 border-b border-gray-200">
-        <div className="flex flex-col md:flex-row items-center justify-between max-w-full mx-auto">
-          <div className="flex items-center mb-2 md:mb-0">
+        <div className="flex flex-col xl:flex-row items-center justify-between max-w-full mx-auto gap-4 xl:gap-0">
+          <div className="flex items-center">
             <h1 className="text-xl md:text-2xl font-bold text-gray-900 mr-4">
                بازار حرفه‌ای ارزهای دیجیتال
             </h1>
@@ -236,8 +333,27 @@ const App: React.FC = () => {
             </span>
           </div>
 
-          <div className="flex items-center gap-4">
-            <div className="inline-flex items-center justify-center bg-gray-100 p-1 rounded-lg border border-gray-200">
+          <div className="flex flex-col md:flex-row items-center gap-4">
+            
+            {/* Timeframe Selector */}
+            <div className="flex items-center bg-gray-100 p-1 rounded-lg border border-gray-200 overflow-x-auto max-w-full">
+                {TIMEFRAMES.map((tf) => (
+                    <button
+                        key={tf.value}
+                        onClick={() => setInterval(tf.value)}
+                        className={`px-3 py-1 rounded-md text-sm font-medium transition-all whitespace-nowrap ${
+                            interval === tf.value 
+                            ? 'bg-white text-blue-600 shadow-sm' 
+                            : 'text-gray-500 hover:text-gray-900'
+                        }`}
+                    >
+                        {tf.label}
+                    </button>
+                ))}
+            </div>
+
+            {/* Log/Linear Selector */}
+            <div className="inline-flex items-center justify-center bg-gray-100 p-1 rounded-lg border border-gray-200 flex-shrink-0">
                 <span 
                   className={`cursor-pointer px-3 py-1 rounded-md text-sm font-medium transition-all duration-200 ${isLogScale ? 'bg-white text-orange-600 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`} 
                   onClick={() => setIsLogScale(true)}
@@ -258,16 +374,21 @@ const App: React.FC = () => {
       <main className="w-full flex-grow p-4">
         {error && (
           <div className="w-full max-w-2xl mx-auto mt-10 p-4 bg-red-100 text-red-700 rounded-lg text-center border border-red-200">
-            <p className="font-bold">خطا:</p>
-            <p>{error}</p>
-            <button onClick={() => window.location.reload()} className="mt-2 text-sm underline">تلاش مجدد</button>
+            <p className="font-bold mb-2">خطا در دریافت اطلاعات</p>
+            <p className="text-sm mb-4">{error}</p>
+            <button 
+                onClick={() => setRetryTrigger(prev => prev + 1)} 
+                className="text-sm px-6 py-2 bg-white text-red-700 font-bold rounded shadow-sm hover:bg-red-50 border border-red-200 transition-colors"
+            >
+                تلاش مجدد
+            </button>
           </div>
         )}
 
         {loading ? (
           <div className="flex flex-col items-center justify-center h-[80vh]">
             <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-            <p className="mt-4 text-gray-500">در حال دریافت و تحلیل داده‌های ۵۰۰۰ ارز دیجیتال...</p>
+            <p className="mt-4 text-gray-500 animate-pulse">در حال دریافت و تحلیل داده‌های بازار...</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 w-full">
@@ -387,6 +508,7 @@ const App: React.FC = () => {
                   <TradingViewWidget 
                     isLogScale={isLogScale} 
                     symbol={getTradingViewSymbol(coin.symbol)} 
+                    interval={interval}
                   />
                   {/* Fullscreen Button */}
                   <button
