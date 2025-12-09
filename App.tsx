@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import TradingViewWidget from './components/TradingViewWidget';
 import { auth, db } from './firebase';
@@ -94,9 +93,9 @@ const App: React.FC = () => {
   // File Input Ref for Import
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const DISPLAY_COUNT = 24;
+  const DISPLAY_COUNT = 9;
   // Fetch MORE to allow effective client-side filtering without emptying the page
-  const FETCH_PER_PAGE = 80; 
+  const FETCH_PER_PAGE = 40; 
   // Estimate for 5000+ coins.
   const TOTAL_PAGES = 100; // Limited to 100 pages to keep UI cleaner
 
@@ -260,7 +259,7 @@ const App: React.FC = () => {
   }, [page, retryTrigger]);
 
   // Derive the coins to display with Filters Applied
-  const visibleCoins = useMemo(() => {
+  const { processedCoins, finalCoins } = useMemo(() => {
     let result = coins.filter((coin) => !removedCoinIds.has(coin.id));
 
     // Apply Search
@@ -283,7 +282,7 @@ const App: React.FC = () => {
         result = result.filter(c => c.market_cap >= cap);
     }
 
-    // Apply Performance
+    // Apply Performance Filter
     if (filters.performance !== 'all') {
       if (filters.performance === 'gainers') {
         result = result.filter(c => c.price_change_percentage_24h > 0);
@@ -292,7 +291,17 @@ const App: React.FC = () => {
       }
     }
 
-    return result.slice(0, DISPLAY_COUNT);
+    // Apply Sorting based on Performance
+    // This ensures that when 'gainers' is selected, the highest gainers are shown first.
+    if (filters.performance === 'gainers') {
+        result.sort((a, b) => (b.price_change_percentage_24h || 0) - (a.price_change_percentage_24h || 0));
+    } else if (filters.performance === 'losers') {
+        result.sort((a, b) => (a.price_change_percentage_24h || 0) - (b.price_change_percentage_24h || 0));
+    }
+    // If 'all', we default to API sort (Market Cap desc), so no extra sort needed unless we want to support user custom sort later.
+
+    const sliced = result.slice(0, DISPLAY_COUNT);
+    return { processedCoins: result, finalCoins: sliced };
   }, [coins, removedCoinIds, filters]);
 
   // Format Helpers
@@ -398,15 +407,15 @@ const App: React.FC = () => {
       setIsPreviewLoading(true);
 
       // If we already have this page loaded, calc from cache/state
-      if (pageNum === page && visibleCoins.length > 0) {
-          const total = visibleCoins.reduce((acc, c) => acc + c.market_cap, 0);
-          setPreviewAvgCap(total / visibleCoins.length);
+      if (pageNum === page && finalCoins.length > 0) {
+          const total = finalCoins.reduce((acc, c) => acc + c.market_cap, 0);
+          setPreviewAvgCap(total / finalCoins.length);
           setIsPreviewLoading(false);
           return;
       }
       
       // Check cache for tooltip data too
-      const cacheKey = `page_${pageNum}_per_24`; // Tooltip fetches 24
+      const cacheKey = `page_${pageNum}_per_${DISPLAY_COUNT}`;
       const cached = pageCache.current.get(cacheKey);
       if (cached && (Date.now() - cached.timestamp < CACHE_DURATION)) {
           const total = cached.data.reduce((acc, c) => acc + c.market_cap, 0);
@@ -422,7 +431,7 @@ const App: React.FC = () => {
           const controller = new AbortController();
           tooltipAbortControllerRef.current = controller;
           try {
-              const data = await fetchWithRetry(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=24&page=${pageNum}&sparkline=false`, 1, 1500, controller.signal);
+              const data = await fetchWithRetry(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${DISPLAY_COUNT}&page=${pageNum}&sparkline=false`, 1, 1500, controller.signal);
               if (currentHoveredPageRef.current === pageNum && data?.length) {
                   const filtered = data.filter((c: any) => !STABLE_COINS.includes(c.symbol.toLowerCase()));
                   // Cache this light request too
@@ -532,8 +541,8 @@ const App: React.FC = () => {
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
                         >
                             <option value="all">همه</option>
-                            <option value="gainers">صعودی (Gainers)</option>
-                            <option value="losers">نزولی (Losers)</option>
+                            <option value="gainers">صعودی (Gainers) - بیشترین رشد</option>
+                            <option value="losers">نزولی (Losers) - بیشترین ریزش</option>
                         </select>
                     </div>
 
@@ -576,7 +585,17 @@ const App: React.FC = () => {
                         </select>
                     </div>
                 </div>
-                <div className="max-w-7xl mx-auto mt-3 flex justify-end">
+                
+                {/* Filter Stats & Actions */}
+                <div className="max-w-7xl mx-auto mt-4 pt-3 border-t border-gray-200 flex flex-col md:flex-row justify-between items-center gap-2">
+                    <div className="text-xs text-gray-600 bg-white px-3 py-1.5 rounded-full border border-gray-200 shadow-sm flex items-center gap-2">
+                         <span className="font-bold text-indigo-600">{coins.length}</span> ارز بارگذاری شده
+                         <span className="text-gray-300">|</span>
+                         <span className="font-bold text-indigo-600">{processedCoins.length}</span> ارز منطبق با فیلتر
+                         <span className="text-gray-300">|</span>
+                         <span className="font-bold text-indigo-600">{finalCoins.length}</span> ارز در حال نمایش
+                    </div>
+                    
                     <button 
                         onClick={() => setFilters({ search: '', minPrice: '', maxPrice: '', performance: 'all', minCap: '' })}
                         className="text-xs text-red-600 hover:text-red-800 font-medium px-3 py-1"
@@ -604,7 +623,7 @@ const App: React.FC = () => {
           </div>
         ) : (
           <>
-            {visibleCoins.length === 0 ? (
+            {finalCoins.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-20 text-gray-500">
                     <svg className="w-16 h-16 mb-4 text-gray-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                     <p className="text-lg font-medium">هیچ ارزی با این فیلترها در این صفحه یافت نشد.</p>
@@ -612,7 +631,7 @@ const App: React.FC = () => {
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 w-full">
-                    {visibleCoins.map((coin) => {
+                    {finalCoins.map((coin) => {
                     const recoveryToAth = coin.current_price && coin.ath ? ((coin.ath - coin.current_price) / coin.current_price) * 100 : 0;
                     const chartContainerId = `chart-container-${coin.id}`;
 
