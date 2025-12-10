@@ -44,62 +44,114 @@ const TIMEFRAMES = [
   { label: '1M', value: '1M' },
 ];
 
-const LOCAL_STORAGE_KEY = 'crypto_layout_preference_v1';
-const CACHE_DURATION = 60 * 1000; // 1 minute cache validity
+// Available limits based on market rank
+const LIMIT_OPTIONS = [20, 50, 100, 200, 500, 1000, 2000, 5000];
 
-// Filter Interface
-interface FilterState {
-  search: string;
-  minPrice: string;
-  maxPrice: string;
-  performance: 'all' | 'gainers' | 'losers';
-  minCap: string;
-}
+const LOCAL_STORAGE_KEY = 'crypto_layout_preference_v1';
+const DATA_CACHE_PREFIX = 'crypto_data_cache_v2_'; // New prefix for data cache
+
+// Lazy Load Wrapper Component with 5s Delay logic
+const LazyWidget = ({ children }: { children?: React.ReactNode }) => {
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [isWaiting, setIsWaiting] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          // Element is in view
+          if (!isLoaded && !timerRef.current) {
+            setIsWaiting(true);
+            // Start 5-second timer
+            timerRef.current = setTimeout(() => {
+              setIsLoaded(true);
+              setIsWaiting(false);
+              observer.disconnect(); // Stop observing once loaded
+            }, 5000);
+          }
+        } else {
+          // Element left view
+          if (timerRef.current) {
+            clearTimeout(timerRef.current);
+            timerRef.current = null;
+            setIsWaiting(false); // Stop showing waiting state
+          }
+        }
+      },
+      { 
+        threshold: 0.2, // Widget must be at least 20% visible to start timer
+        rootMargin: '0px' // No pre-loading, strict visibility
+      } 
+    );
+
+    if (ref.current) {
+      observer.observe(ref.current);
+    }
+
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      observer.disconnect();
+    };
+  }, [isLoaded]);
+
+  return (
+    <div ref={ref} className="w-full h-full relative">
+      {isLoaded ? (
+        children
+      ) : (
+        <div className="w-full h-full flex flex-col items-center justify-center bg-gray-50 text-gray-400 text-sm rounded-lg border border-gray-100 transition-all duration-300">
+          {isWaiting ? (
+            <div className="flex flex-col items-center gap-3">
+              {/* Custom Loading Circle */}
+              <div className="relative w-12 h-12">
+                 <svg className="w-full h-full transform -rotate-90">
+                   <circle cx="24" cy="24" r="20" stroke="currentColor" strokeWidth="4" fill="transparent" className="text-gray-200" />
+                   <circle cx="24" cy="24" r="20" stroke="currentColor" strokeWidth="4" fill="transparent" 
+                           className="text-blue-500 animate-[dash_5s_linear_forwards]" 
+                           strokeDasharray="125.6" 
+                           strokeDashoffset="125.6" />
+                 </svg>
+              </div>
+              <span className="text-xs text-blue-500 font-medium">مکث کنید...</span>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-2 opacity-50">
+               <span className="text-2xl">🛑</span>
+               <span>اسکرول متوقف شود</span>
+            </div>
+          )}
+        </div>
+      )}
+      <style>{`
+        @keyframes dash {
+          to { stroke-dashoffset: 0; }
+        }
+      `}</style>
+    </div>
+  );
+};
 
 const App: React.FC = () => {
   const [isLogScale, setIsLogScale] = useState(true);
   const [interval, setInterval] = useState("1M"); // Default Timeframe
   const [coins, setCoins] = useState<CoinData[]>([]); // Raw fetched data (buffer)
   const [removedCoinIds, setRemovedCoinIds] = useState<Set<string>>(new Set()); // Persist removed IDs
-  const [page, setPage] = useState(1);
+  const [favorites, setFavorites] = useState<Set<string>>(new Set()); // Favorites
+  const [itemsPerPage, setItemsPerPage] = useState(100); // Total Items Limit
+  
   const [loading, setLoading] = useState(true);
+  const [loadingProgress, setLoadingProgress] = useState<string>(''); // Progress text
   const [error, setError] = useState<string | null>(null);
   const [retryTrigger, setRetryTrigger] = useState(0); // For manual retry
   const [user, setUser] = useState<any>(null); // Firebase User
+  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   
-  // Cache Ref
-  const pageCache = useRef(new Map<string, { timestamp: number; data: CoinData[] }>());
-  
-  // Filter States
-  const [showFilters, setShowFilters] = useState(false);
-  const [filters, setFilters] = useState<FilterState>({
-    search: '',
-    minPrice: '',
-    maxPrice: '',
-    performance: 'all',
-    minCap: ''
-  });
-
-  // State for Pagination Tooltip
-  const [hoveredPageInfo, setHoveredPageInfo] = useState<{ page: number; rect: DOMRect } | null>(null);
-  const [previewAvgCap, setPreviewAvgCap] = useState<number | null>(null);
-  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
-  
-  // Refs for debouncing hover fetch & aborting requests
-  const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const currentHoveredPageRef = useRef<number | null>(null);
-  const tooltipAbortControllerRef = useRef<AbortController | null>(null);
-
   // File Input Ref for Import
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const DISPLAY_COUNT = 9;
-  // Fetch MORE to allow effective client-side filtering without emptying the page
-  const FETCH_PER_PAGE = 40; 
-  // Estimate for 5000+ coins.
-  const TOTAL_PAGES = 100; // Limited to 100 pages to keep UI cleaner
-
-  // Load from LocalStorage on mount
+  // Load Layout Preferences from LocalStorage
   useEffect(() => {
       const savedLayout = localStorage.getItem(LOCAL_STORAGE_KEY);
       if (savedLayout) {
@@ -116,26 +168,31 @@ const App: React.FC = () => {
               console.error("Error loading layout from local storage", e);
           }
       }
+
+      const savedFavs = localStorage.getItem('crypto_favorites_v1');
+      if (savedFavs) {
+          try {
+              const parsed = JSON.parse(savedFavs);
+              if (Array.isArray(parsed)) {
+                  setFavorites(new Set(parsed));
+              }
+          } catch(e) {}
+      }
   }, []);
 
   // Firebase Authentication & Database Sync
   useEffect(() => {
-    // 1. Sign in anonymously
     signInAnonymously(auth).catch((err) => {
-        // If API key is invalid (default), we just ignore persistence silently
         if (err.code !== 'auth/invalid-api-key' && err.code !== 'auth/api-key-not-valid') {
             console.warn("Firebase Auth Error:", err.message);
         }
     });
 
-    // 2. Listen for auth state
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       
       if (currentUser) {
-        // 3. Connect to Firestore for this user
         const userDocRef = doc(db, 'users', currentUser.uid);
-        
         const unsubscribeSnapshot = onSnapshot(userDocRef, (docSnap) => {
             if (docSnap.exists()) {
                 const data = docSnap.data();
@@ -146,13 +203,15 @@ const App: React.FC = () => {
                         return newSet;
                     });
                 }
+                if (data.favorites && Array.isArray(data.favorites)) {
+                    setFavorites(new Set(data.favorites));
+                }
             }
         }, (err) => {
             if (err.code !== 'permission-denied') {
                  console.warn("Firestore Read Error:", err.message);
             }
         });
-
         return () => unsubscribeSnapshot();
       }
     });
@@ -161,7 +220,7 @@ const App: React.FC = () => {
   }, []);
 
   // Robust fetch with retry logic
-  const fetchWithRetry = async (url: string, retries = 5, baseBackoff = 2500, signal?: AbortSignal): Promise<any> => {
+  const fetchWithRetry = async (url: string, retries = 3, baseBackoff = 2000, signal?: AbortSignal): Promise<any> => {
     for (let i = 0; i < retries; i++) {
       try {
         if (signal?.aborted) {
@@ -179,14 +238,13 @@ const App: React.FC = () => {
         // Handle 429 Rate Limit specifically
         if (response.status === 429) {
             const waitTime = baseBackoff * Math.pow(2, i + 1);
-            console.warn(`Rate limit (429). Retrying in ${waitTime}ms...`);
+            // console.warn(`Rate limit (429). Retrying in ${waitTime}ms...`);
             await new Promise(r => setTimeout(r, waitTime));
             continue;
         }
 
         if (response.status >= 500) {
              const waitTime = baseBackoff * Math.pow(2, i);
-             console.warn(`Server error (${response.status}). Retrying in ${waitTime}ms...`);
              await new Promise(r => setTimeout(r, waitTime));
              continue;
         }
@@ -198,129 +256,146 @@ const App: React.FC = () => {
         if (i === retries - 1) throw err;
         
         const waitTime = baseBackoff * Math.pow(2, i);
-        console.log(`Fetch attempt ${i + 1} failed. Retrying in ${waitTime}ms...`);
         await new Promise(r => setTimeout(r, waitTime));
       }
     }
   };
 
-  // Fetch data from CoinGecko
+  // Main Data Fetching Logic with Persistent Caching and Sequential Fetching
   useEffect(() => {
     const controller = new AbortController();
 
     const fetchCoins = async () => {
-      setLoading(true);
       setError(null);
+      setLoadingProgress('');
       
-      const cacheKey = `page_${page}_per_${FETCH_PER_PAGE}`;
-      const cached = pageCache.current.get(cacheKey);
-      
-      // Check Cache validity
-      if (cached && (Date.now() - cached.timestamp < CACHE_DURATION)) {
-          setCoins(cached.data);
-          setLoading(false);
-          return;
+      const cacheKey = `${DATA_CACHE_PREFIX}${itemsPerPage}`;
+      let usedCache = false;
+
+      // 1. Try to load from LocalStorage first
+      try {
+          const stored = localStorage.getItem(cacheKey);
+          if (stored) {
+              const { timestamp, data } = JSON.parse(stored);
+              // Use cached data immediately
+              if (Array.isArray(data) && data.length > 0) {
+                  setCoins(data);
+                  usedCache = true;
+                  setLoading(false); // Instant load
+
+                  // Check if cache is stale (older than 2 minutes)
+                  // If so, we continue to fetch in background to update it
+                  if (Date.now() - timestamp < 120 * 1000) {
+                      return; // Cache is fresh enough, stop here
+                  }
+              }
+          }
+      } catch (e) {
+          console.warn("Cache read error:", e);
+      }
+
+      // If we didn't use cache, show loading state
+      if (!usedCache) {
+          setLoading(true);
       }
 
       try {
-        const data = await fetchWithRetry(
-          `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${FETCH_PER_PAGE}&page=${page}&sparkline=false&price_change_percentage=24h,7d,30d,1y`,
-          5, // Increased retries
-          2500, // Increased backoff
-          controller.signal
-        );
+        const BATCH_SIZE = 250;
+        const batchesNeeded = Math.ceil(itemsPerPage / BATCH_SIZE);
+        const accumulatedCoins: CoinData[] = [];
         
-        const filteredData = data.filter((coin: CoinData) => 
-            !STABLE_COINS.includes(coin.symbol.toLowerCase()) && 
-            !STABLE_COINS.includes(coin.id.toLowerCase())
-        );
+        // Sequential Fetching Loop to avoid "Failed to fetch" (Browser/Network overload)
+        for (let i = 1; i <= batchesNeeded; i++) {
+            if (controller.signal.aborted) break;
+
+            // Update user feedback only if they are waiting (no cache)
+            if (!usedCache) {
+                setLoadingProgress(`در حال دریافت بخش ${i} از ${batchesNeeded}...`);
+            }
+
+            const batchData = await fetchWithRetry(
+                `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${BATCH_SIZE}&page=${i}&sparkline=false&price_change_percentage=24h`,
+                3, // retries
+                1500, // backoff
+                controller.signal
+            );
+            
+            if (batchData && Array.isArray(batchData)) {
+                accumulatedCoins.push(...batchData);
+            }
+
+            // Small delay between requests to be polite to the API and prevent browser queue lockup
+            if (i < batchesNeeded) {
+                await new Promise(r => setTimeout(r, 300)); 
+            }
+        }
 
         if (!controller.signal.aborted) {
-            // Update Cache
-            pageCache.current.set(cacheKey, { timestamp: Date.now(), data: filteredData });
+            const filteredData = accumulatedCoins.filter((coin: CoinData) => 
+                !STABLE_COINS.includes(coin.symbol.toLowerCase()) && 
+                !STABLE_COINS.includes(coin.id.toLowerCase())
+            );
+
+            // Update State
             setCoins(filteredData);
+            
+            // Save to LocalStorage
+            try {
+                // Minimal data to save space if needed, but saving full object for now
+                localStorage.setItem(cacheKey, JSON.stringify({ 
+                    timestamp: Date.now(), 
+                    data: filteredData 
+                }));
+            } catch (e) {
+                console.warn("Failed to save to localStorage (Quota exceeded probably):", e);
+            }
         }
       } catch (err: any) {
         if (err.name !== 'AbortError') {
             console.error("Final Fetch Error:", err);
-            setError("اتصال به سرور برقرار نشد. لطفاً چند لحظه صبر کنید و سپس دکمه تلاش مجدد را بزنید.");
+            // Only show error screen if we have no data at all
+            if (!usedCache) {
+                setError("اتصال به سرور برقرار نشد یا محدودیت درخواست وجود دارد. لطفاً چند لحظه صبر کنید.");
+            }
         }
       } finally {
         if (!controller.signal.aborted) {
             setLoading(false);
+            setLoadingProgress('');
         }
       }
     };
 
     fetchCoins();
-    window.scrollTo({ top: 0, behavior: 'smooth' });
 
     return () => controller.abort();
-  }, [page, retryTrigger]);
+  }, [itemsPerPage, retryTrigger]);
 
-  // Derive the coins to display with Filters Applied
+  // Derive the coins to display
   const { processedCoins, finalCoins } = useMemo(() => {
     let result = coins.filter((coin) => !removedCoinIds.has(coin.id));
 
-    // Apply Search
-    if (filters.search) {
-      const q = filters.search.toLowerCase();
-      result = result.filter(c => c.name.toLowerCase().includes(q) || c.symbol.toLowerCase().includes(q));
+    if (showFavoritesOnly) {
+        result = result.filter(c => favorites.has(c.id));
     }
 
-    // Apply Price Range
-    if (filters.minPrice) {
-      result = result.filter(c => c.current_price >= parseFloat(filters.minPrice));
-    }
-    if (filters.maxPrice) {
-      result = result.filter(c => c.current_price <= parseFloat(filters.maxPrice));
-    }
-
-    // Apply Market Cap
-    if (filters.minCap) {
-        const cap = parseFloat(filters.minCap);
-        result = result.filter(c => c.market_cap >= cap);
-    }
-
-    // Apply Performance Filter
-    if (filters.performance !== 'all') {
-      if (filters.performance === 'gainers') {
-        result = result.filter(c => c.price_change_percentage_24h > 0);
-      } else {
-        result = result.filter(c => c.price_change_percentage_24h < 0);
-      }
-    }
-
-    // Apply Sorting based on Performance
-    // This ensures that when 'gainers' is selected, the highest gainers are shown first.
-    if (filters.performance === 'gainers') {
-        result.sort((a, b) => (b.price_change_percentage_24h || 0) - (a.price_change_percentage_24h || 0));
-    } else if (filters.performance === 'losers') {
-        result.sort((a, b) => (a.price_change_percentage_24h || 0) - (b.price_change_percentage_24h || 0));
-    }
-    // If 'all', we default to API sort (Market Cap desc), so no extra sort needed unless we want to support user custom sort later.
-
-    const sliced = result.slice(0, DISPLAY_COUNT);
+    // Limit total items displayed to the selected number (or filtered result size)
+    // Note: If we fetched 5000, itemsPerPage is 5000.
+    const sliced = result.slice(0, itemsPerPage);
+    
     return { processedCoins: result, finalCoins: sliced };
-  }, [coins, removedCoinIds, filters]);
+  }, [coins, removedCoinIds, favorites, showFavoritesOnly, itemsPerPage]);
 
   // Format Helpers
   const formatCurrency = (value: number) => {
     if (value === null || value === undefined) return '-';
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: value < 1 ? 6 : 2 }).format(value);
   };
-
-  const formatCompact = (value: number) => {
-    if (value === null || value === undefined) return '-';
-    return new Intl.NumberFormat('en-US', { notation: "compact", maximumFractionDigits: 2 }).format(value);
-  };
   
   const getTradingViewSymbol = (coinSymbol: string) => {
     if (coinSymbol.toLowerCase() === 'usdt') return 'USDCUSDT'; 
     return `${coinSymbol.toUpperCase()}USDT`;
   };
-
-  const getPageNumbers = () => Array.from({ length: TOTAL_PAGES }, (_, i) => i + 1);
 
   const getPercentClass = (val: number | null | undefined) => {
       if (val === null || val === undefined) return 'text-gray-500';
@@ -347,6 +422,23 @@ const App: React.FC = () => {
     });
   };
 
+  const toggleFavorite = (coinId: string) => {
+      setFavorites(prev => {
+          const newSet = new Set(prev);
+          if (newSet.has(coinId)) {
+              newSet.delete(coinId);
+          } else {
+              newSet.add(coinId);
+          }
+          localStorage.setItem('crypto_favorites_v1', JSON.stringify(Array.from(newSet)));
+          if (user) {
+              const userDocRef = doc(db, 'users', user.uid);
+              setDoc(userDocRef, { favorites: Array.from(newSet) }, { merge: true }).catch(console.error);
+          }
+          return newSet;
+      });
+  };
+
   // Layout Handlers
   const handleSaveLayout = () => {
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(Array.from(removedCoinIds)));
@@ -361,7 +453,11 @@ const App: React.FC = () => {
   };
 
   const handleExportBackup = () => {
-    const data = { removedCoinIds: Array.from(removedCoinIds), exportedAt: new Date().toISOString() };
+    const data = { 
+        removedCoinIds: Array.from(removedCoinIds), 
+        favorites: Array.from(favorites),
+        exportedAt: new Date().toISOString() 
+    };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -374,343 +470,225 @@ const App: React.FC = () => {
   const handleImportBackup = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
         const json = JSON.parse(e.target?.result as string);
-        if (json.removedCoinIds) {
-          const newSet = new Set(json.removedCoinIds);
-          setRemovedCoinIds(prev => {
-             const merged = new Set([...Array.from(prev), ...Array.from(newSet)]);
-             localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(Array.from(merged)));
-             return merged;
-          });
-          alert("بازیابی موفقیت‌آمیز بود.");
+        if (json.removedCoinIds && Array.isArray(json.removedCoinIds)) {
+          const newSet = new Set<string>(json.removedCoinIds);
+          setRemovedCoinIds(newSet);
+          localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(Array.from(newSet)));
+          if (user) {
+             const userDocRef = doc(db, 'users', user.uid);
+             setDoc(userDocRef, { removedCoinIds: Array.from(newSet) }, { merge: true });
+          }
         }
-      } catch (err) { alert("خطا در فایل."); }
-      if (fileInputRef.current) fileInputRef.current.value = "";
+        if (json.favorites && Array.isArray(json.favorites)) {
+            const newFavs = new Set<string>(json.favorites);
+            setFavorites(newFavs);
+            localStorage.setItem('crypto_favorites_v1', JSON.stringify(Array.from(newFavs)));
+            if (user) {
+                const userDocRef = doc(db, 'users', user.uid);
+                setDoc(userDocRef, { favorites: Array.from(newFavs) }, { merge: true });
+            }
+        }
+        alert("Backup restored successfully!");
+      } catch (err) {
+        alert("Invalid backup file.");
+      }
     };
     reader.readAsText(file);
   };
 
-  // Tooltip Logic
-  const onPageEnter = (pageNum: number, e: React.MouseEvent) => {
-      const rect = e.currentTarget.getBoundingClientRect();
-      setHoveredPageInfo({ page: pageNum, rect });
-      currentHoveredPageRef.current = pageNum;
-      
-      // Cancel previous timers and requests
-      if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
-      if (tooltipAbortControllerRef.current) tooltipAbortControllerRef.current.abort();
-      
-      setPreviewAvgCap(null);
-      setIsPreviewLoading(true);
-
-      // If we already have this page loaded, calc from cache/state
-      if (pageNum === page && finalCoins.length > 0) {
-          const total = finalCoins.reduce((acc, c) => acc + c.market_cap, 0);
-          setPreviewAvgCap(total / finalCoins.length);
-          setIsPreviewLoading(false);
-          return;
-      }
-      
-      // Check cache for tooltip data too
-      const cacheKey = `page_${pageNum}_per_${DISPLAY_COUNT}`;
-      const cached = pageCache.current.get(cacheKey);
-      if (cached && (Date.now() - cached.timestamp < CACHE_DURATION)) {
-          const total = cached.data.reduce((acc, c) => acc + c.market_cap, 0);
-          setPreviewAvgCap(total / cached.data.length);
-          setIsPreviewLoading(false);
-          return;
-      }
-
-      if (loading) return;
-
-      hoverTimeoutRef.current = setTimeout(async () => {
-          if (currentHoveredPageRef.current !== pageNum) return;
-          const controller = new AbortController();
-          tooltipAbortControllerRef.current = controller;
-          try {
-              const data = await fetchWithRetry(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${DISPLAY_COUNT}&page=${pageNum}&sparkline=false`, 1, 1500, controller.signal);
-              if (currentHoveredPageRef.current === pageNum && data?.length) {
-                  const filtered = data.filter((c: any) => !STABLE_COINS.includes(c.symbol.toLowerCase()));
-                  // Cache this light request too
-                  pageCache.current.set(cacheKey, { timestamp: Date.now(), data: filtered });
-                  
-                  if (filtered.length > 0) {
-                      setPreviewAvgCap(filtered.reduce((acc: any, c: any) => acc + c.market_cap, 0) / filtered.length);
-                  } else {
-                      setPreviewAvgCap(0);
-                  }
-              }
-          } catch (error) { setPreviewAvgCap(null); } 
-          finally { if (currentHoveredPageRef.current === pageNum) setIsPreviewLoading(false); }
-      }, 700); 
-  };
-
-  const onPageLeave = () => {
-      if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
-      if (tooltipAbortControllerRef.current) tooltipAbortControllerRef.current.abort();
-      currentHoveredPageRef.current = null;
-      setHoveredPageInfo(null);
-  };
-
   return (
-    <div className="min-h-screen bg-gray-100 text-gray-800 flex flex-col items-center font-sans">
-      <header className="w-full bg-white shadow-sm sticky top-0 z-20 border-b border-gray-200">
-        <div className="px-4 py-3 flex flex-col xl:flex-row items-center justify-between max-w-full mx-auto gap-4 xl:gap-0">
-          <div className="flex items-center">
-            <h1 className="text-xl md:text-2xl font-bold text-gray-900 mr-4">بازار ارزهای دیجیتال</h1>
-            <span className="text-sm text-gray-500 bg-gray-100 px-2 py-1 rounded">صفحه {page} از {TOTAL_PAGES}</span>
-          </div>
-
-          <div className="flex flex-col md:flex-row items-center gap-4">
-            {/* Action Buttons */}
-            <div className="flex items-center gap-2">
-                 <input type="file" ref={fileInputRef} onChange={handleImportBackup} accept=".json" className="hidden" />
-                 
-                 <button onClick={handleSaveLayout} className="flex items-center gap-1 bg-green-50 hover:bg-green-100 text-green-700 px-3 py-1.5 rounded-lg border border-green-200 text-sm font-medium transition-colors">
-                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/></svg>
-                    <span>ذخیره چیدمان</span>
-                 </button>
-
-                 <button onClick={handleResetLayout} className="flex items-center gap-1 bg-red-50 hover:bg-red-100 text-red-700 px-3 py-1.5 rounded-lg border border-red-200 text-sm font-medium transition-colors">
-                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3v5h5M3.05 13A9 9 0 1 0 6 5.3L3 8"/></svg>
-                    <span>بازنشانی</span>
-                 </button>
-
-                 <div className="h-6 w-px bg-gray-300 mx-1"></div>
-
-                 <button onClick={handleExportBackup} className="p-1.5 bg-gray-50 hover:bg-gray-100 text-gray-600 rounded-md border border-gray-200" title="Export">
-                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-                 </button>
-                 <button onClick={() => fileInputRef.current?.click()} className="p-1.5 bg-gray-50 hover:bg-gray-100 text-gray-600 rounded-md border border-gray-200" title="Import">
-                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
-                 </button>
+    <div className="min-h-screen flex flex-col font-sans bg-gray-50">
+      {/* Header */}
+      <header className="bg-white shadow-sm z-20 sticky top-0">
+        <div className="max-w-[1920px] mx-auto px-4 py-3">
+          <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+            {/* Title & Stats */}
+            <div className="flex items-center gap-4">
+              <h1 className="text-xl md:text-2xl font-bold text-gray-800 flex items-center gap-2">
+                <span className="text-blue-600">₿</span>
+                نمودار پیشرفته ارز دیجیتال
+              </h1>
+              <div className="hidden md:flex items-center gap-3 text-sm text-gray-500 border-r border-gray-200 pr-4 mr-4">
+                <span>نمایش: {finalCoins.length} از {processedCoins.length}</span>
+              </div>
             </div>
 
-            {/* Filter Toggle */}
-            <button 
-                onClick={() => setShowFilters(!showFilters)}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${showFilters ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'}`}
-            >
-                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
-                <span>فیلترها</span>
-            </button>
+            {/* Controls */}
+            <div className="flex flex-wrap items-center justify-center gap-2 md:gap-3 w-full md:w-auto">
+              {/* Favorites Toggle */}
+              <button
+                onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
+                className={`px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors flex items-center gap-1 ${showFavoritesOnly ? 'bg-yellow-50 border-yellow-300 text-yellow-700' : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'}`}
+              >
+                {showFavoritesOnly ? '★ نمایش همه' : '☆ فقط علاقه‌مندی‌ها'}
+              </button>
 
-            {/* Timeframe */}
-            <div className="flex items-center bg-gray-100 p-1 rounded-lg border border-gray-200 overflow-x-auto">
-                {TIMEFRAMES.map((tf) => (
-                    <button key={tf.value} onClick={() => setInterval(tf.value)} className={`px-3 py-1 rounded-md text-sm font-medium whitespace-nowrap ${interval === tf.value ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}>{tf.label}</button>
+              <div className="h-6 w-px bg-gray-300 hidden md:block" />
+              
+              {/* Items Per Page Limit */}
+              <div className="flex items-center gap-1">
+                 <span className="text-xs text-gray-500">تعداد کل:</span>
+                 <select 
+                    value={itemsPerPage} 
+                    onChange={(e) => {
+                        setItemsPerPage(Number(e.target.value));
+                    }}
+                    className="px-2 py-1.5 rounded-lg border border-gray-200 bg-gray-50 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                  >
+                    {LIMIT_OPTIONS.map(opt => (
+                      <option key={opt} value={opt}>{opt}</option>
+                    ))}
+                  </select>
+              </div>
+
+              <div className="h-6 w-px bg-gray-300 hidden md:block" />
+
+              <button
+                onClick={() => setIsLogScale(!isLogScale)}
+                className={`px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${isLogScale ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'}`}
+              >
+                {isLogScale ? 'Lg' : 'Ln'}
+              </button>
+
+              <select 
+                value={interval} 
+                onChange={(e) => setInterval(e.target.value)}
+                className="px-2 py-1.5 rounded-lg border border-gray-200 bg-gray-50 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+              >
+                {TIMEFRAMES.map(tf => (
+                  <option key={tf.value} value={tf.value}>{tf.label}</option>
                 ))}
-            </div>
+              </select>
 
-            {/* Scale */}
-            <div className="inline-flex items-center bg-gray-100 p-1 rounded-lg border border-gray-200">
-                <span className={`cursor-pointer px-3 py-1 rounded-md text-sm font-medium ${isLogScale ? 'bg-white text-orange-600 shadow-sm' : 'text-gray-500'}`} onClick={() => setIsLogScale(true)}>لگاریتمی</span>
-                <span className={`cursor-pointer px-3 py-1 rounded-md text-sm font-medium ${!isLogScale ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500'}`} onClick={() => setIsLogScale(false)}>خطی</span>
+              <div className="h-6 w-px bg-gray-300 hidden md:block" />
+
+              <div className="relative group">
+                <button className="px-3 py-1.5 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 text-sm">
+                  مدیریت
+                </button>
+                <div className="absolute left-0 mt-2 w-48 bg-white rounded-lg shadow-xl border border-gray-100 hidden group-hover:block p-2 z-50">
+                  <button onClick={handleSaveLayout} className="w-full text-right px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded">ذخیره چیدمان</button>
+                  <button onClick={handleResetLayout} className="w-full text-right px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded">بازنشانی</button>
+                  <hr className="my-1" />
+                  <button onClick={handleExportBackup} className="w-full text-right px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded">دریافت بکاپ</button>
+                  <label className="block w-full text-right px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded cursor-pointer">
+                    بازگردانی بکاپ
+                    <input type="file" className="hidden" ref={fileInputRef} onChange={handleImportBackup} accept=".json" />
+                  </label>
+                </div>
+              </div>
             </div>
           </div>
         </div>
-
-        {/* Filter Panel */}
-        {showFilters && (
-            <div className="border-t border-gray-200 bg-gray-50 px-4 py-4 animate-in slide-in-from-top-2 duration-200">
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 max-w-7xl mx-auto">
-                    {/* Search */}
-                    <div>
-                        <label className="block text-xs font-semibold text-gray-500 mb-1">جستجو (نام/نماد)</label>
-                        <div className="relative">
-                            <input 
-                                type="text" 
-                                placeholder="BTC, Ethereum..." 
-                                value={filters.search}
-                                onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
-                                className="w-full pl-3 pr-8 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
-                            />
-                            <svg className="w-4 h-4 text-gray-400 absolute right-2.5 top-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                        </div>
-                    </div>
-
-                    {/* Performance */}
-                    <div>
-                        <label className="block text-xs font-semibold text-gray-500 mb-1">روند ۲۴ ساعته</label>
-                        <select 
-                            value={filters.performance}
-                            onChange={(e) => setFilters(prev => ({ ...prev, performance: e.target.value as any }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
-                        >
-                            <option value="all">همه</option>
-                            <option value="gainers">صعودی (Gainers) - بیشترین رشد</option>
-                            <option value="losers">نزولی (Losers) - بیشترین ریزش</option>
-                        </select>
-                    </div>
-
-                    {/* Price Range */}
-                    <div className="grid grid-cols-2 gap-2">
-                        <div>
-                            <label className="block text-xs font-semibold text-gray-500 mb-1">حداقل قیمت ($)</label>
-                            <input 
-                                type="number" 
-                                placeholder="0" 
-                                value={filters.minPrice}
-                                onChange={(e) => setFilters(prev => ({ ...prev, minPrice: e.target.value }))}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 text-sm"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-xs font-semibold text-gray-500 mb-1">حداکثر قیمت ($)</label>
-                            <input 
-                                type="number" 
-                                placeholder="Max" 
-                                value={filters.maxPrice}
-                                onChange={(e) => setFilters(prev => ({ ...prev, maxPrice: e.target.value }))}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 text-sm"
-                            />
-                        </div>
-                    </div>
-
-                    {/* Market Cap Filter */}
-                     <div>
-                        <label className="block text-xs font-semibold text-gray-500 mb-1">مارکت کپ</label>
-                        <select 
-                            value={filters.minCap}
-                            onChange={(e) => setFilters(prev => ({ ...prev, minCap: e.target.value }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
-                        >
-                            <option value="">همه</option>
-                            <option value="1000000000">بالای ۱ میلیارد دلار</option>
-                            <option value="100000000">بالای ۱۰۰ میلیون دلار</option>
-                            <option value="10000000">بالای ۱۰ میلیون دلار</option>
-                        </select>
-                    </div>
-                </div>
-                
-                {/* Filter Stats & Actions */}
-                <div className="max-w-7xl mx-auto mt-4 pt-3 border-t border-gray-200 flex flex-col md:flex-row justify-between items-center gap-2">
-                    <div className="text-xs text-gray-600 bg-white px-3 py-1.5 rounded-full border border-gray-200 shadow-sm flex items-center gap-2">
-                         <span className="font-bold text-indigo-600">{coins.length}</span> ارز بارگذاری شده
-                         <span className="text-gray-300">|</span>
-                         <span className="font-bold text-indigo-600">{processedCoins.length}</span> ارز منطبق با فیلتر
-                         <span className="text-gray-300">|</span>
-                         <span className="font-bold text-indigo-600">{finalCoins.length}</span> ارز در حال نمایش
-                    </div>
-                    
-                    <button 
-                        onClick={() => setFilters({ search: '', minPrice: '', maxPrice: '', performance: 'all', minCap: '' })}
-                        className="text-xs text-red-600 hover:text-red-800 font-medium px-3 py-1"
-                    >
-                        پاک کردن فیلترها
-                    </button>
-                </div>
-            </div>
-        )}
       </header>
 
-      <main className="w-full flex-grow p-4">
-        {error && (
-          <div className="w-full max-w-2xl mx-auto mt-10 p-4 bg-red-100 text-red-700 rounded-lg text-center border border-red-200">
-            <p className="font-bold mb-2">خطا در دریافت اطلاعات</p>
-            <p className="text-sm mb-4">{error}</p>
-            <button onClick={() => setRetryTrigger(prev => prev + 1)} className="text-sm px-6 py-2 bg-white text-red-700 font-bold rounded shadow-sm hover:bg-red-50 border border-red-200">تلاش مجدد</button>
-          </div>
-        )}
-
+      {/* Main Content */}
+      <main className="flex-grow p-4 md:p-6">
         {loading ? (
-          <div className="flex flex-col items-center justify-center h-[80vh]">
-            <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-            <p className="mt-4 text-gray-500 animate-pulse">در حال دریافت داده‌های بازار...</p>
-          </div>
+            <div className="flex flex-col items-center justify-center h-96">
+                <div className="w-16 h-16 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mb-4"></div>
+                <p className="text-gray-800 font-medium animate-pulse mb-2">در حال دریافت اطلاعات بازار...</p>
+                {loadingProgress && (
+                    <p className="text-blue-600 text-sm font-medium bg-blue-50 px-3 py-1 rounded-full">{loadingProgress}</p>
+                )}
+            </div>
+        ) : error ? (
+            <div className="flex flex-col items-center justify-center h-96 text-center">
+                <div className="text-red-500 text-5xl mb-4">⚠️</div>
+                <p className="text-gray-800 font-medium text-lg mb-2">خطا در دریافت اطلاعات</p>
+                <p className="text-gray-500 mb-6 max-w-md">{error}</p>
+                <button 
+                    onClick={() => setRetryTrigger(prev => prev + 1)}
+                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all shadow-lg hover:shadow-xl"
+                >
+                    تلاش مجدد
+                </button>
+            </div>
+        ) : finalCoins.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-96 text-center">
+                <p className="text-gray-500 text-lg">هیچ ارزی یافت نشد.</p>
+            </div>
         ) : (
-          <>
-            {finalCoins.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-20 text-gray-500">
-                    <svg className="w-16 h-16 mb-4 text-gray-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                    <p className="text-lg font-medium">هیچ ارزی با این فیلترها در این صفحه یافت نشد.</p>
-                    <p className="text-sm mt-2">لطفاً فیلترها را تغییر دهید یا به صفحه دیگری بروید.</p>
-                </div>
-            ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 w-full">
-                    {finalCoins.map((coin) => {
-                    const recoveryToAth = coin.current_price && coin.ath ? ((coin.ath - coin.current_price) / coin.current_price) * 100 : 0;
-                    const chartContainerId = `chart-container-${coin.id}`;
-
-                    return (
-                    <div key={coin.id} className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden flex flex-col aspect-square relative group">
-                        <button onClick={(e) => { e.stopPropagation(); removeCoin(coin.id); }} className="absolute top-2 right-2 bg-white/90 hover:bg-red-50 text-gray-400 hover:text-red-500 p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-all duration-200 z-30 shadow-sm border border-transparent hover:border-red-100">
-                            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                        </button>
-
-                        <div className="p-4 border-b border-gray-200 bg-white flex-shrink-0">
-                            <div className="flex justify-between items-start mb-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="flex flex-col items-center justify-center bg-gray-100 w-12 h-12 rounded-full border border-gray-200"><span className="text-sm font-bold text-gray-500">#{coin.market_cap_rank}</span></div>
-                                    <img src={coin.image} alt={coin.name} className="w-10 h-10 rounded-full" />
-                                    <div><h2 className="text-lg font-bold text-gray-900 leading-tight">{coin.name}</h2><span className="text-sm text-gray-500 font-semibold uppercase">{coin.symbol}</span></div>
-                                </div>
-                                <div className="text-right pr-8">
-                                    <div className="text-2xl font-extrabold text-gray-900 font-mono tracking-tight">{formatCurrency(coin.current_price)}</div>
-                                    <div className={`text-sm font-bold ${getPercentClass(coin.price_change_percentage_24h)}`}>{coin.price_change_percentage_24h?.toFixed(2)}% (24h)</div>
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-5 gap-1 text-center text-xs mb-4 bg-gray-50 p-2 rounded-lg border border-gray-100">
-                                <div className="flex flex-col"><span className="text-gray-400 mb-1">7d</span><span className={`font-bold text-sm ${getPercentClass(coin.price_change_percentage_7d_in_currency)}`}>{coin.price_change_percentage_7d_in_currency?.toFixed(2)}%</span></div>
-                                <div className="flex flex-col border-l border-gray-200 pl-1"><span className="text-gray-400 mb-1">30d</span><span className={`font-bold text-sm ${getPercentClass(coin.price_change_percentage_30d_in_currency)}`}>{coin.price_change_percentage_30d_in_currency?.toFixed(2)}%</span></div>
-                                <div className="flex flex-col border-l border-gray-200 pl-1"><span className="text-gray-400 mb-1">1y</span><span className={`font-bold text-sm ${getPercentClass(coin.price_change_percentage_1y_in_currency)}`}>{coin.price_change_percentage_1y_in_currency?.toFixed(2)}%</span></div>
-                                <div className="flex flex-col border-l border-gray-200 pl-1"><span className="text-gray-400 mb-1">ATH</span><span className={`font-bold text-sm ${getPercentClass(coin.ath_change_percentage)}`}>{coin.ath_change_percentage?.toFixed(1)}%</span></div>
-                                <div className="flex flex-col border-l border-gray-200 pl-1"><span className="text-gray-400 mb-1 font-medium">To ATH</span><span className="font-bold text-sm text-green-600">+{recoveryToAth.toFixed(1)}%</span></div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
-                                <div className="flex justify-between items-center border-b border-gray-50 pb-2"><span className="text-gray-500">Market Cap</span><span className="font-bold text-gray-900">${formatCompact(coin.market_cap)}</span></div>
-                                <div className="flex justify-between items-center border-b border-gray-50 pb-2"><span className="text-gray-500">Volume (24h)</span><span className="font-bold text-gray-900">${formatCompact(coin.total_volume)}</span></div>
-                                <div className="flex justify-between items-center border-b border-gray-50 pb-2"><span className="text-gray-500">High (24h)</span><span className="font-bold text-gray-900">{formatCurrency(coin.high_24h)}</span></div>
-                                <div className="flex justify-between items-center border-b border-gray-50 pb-2"><span className="text-gray-500">Low (24h)</span><span className="font-bold text-gray-900">{formatCurrency(coin.low_24h)}</span></div>
-                            </div>
+            // Modified Grid for Square Cards - Restricted to max 3 columns on large screens
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
+              {finalCoins.map((coin) => (
+                <div 
+                  id={`card-${coin.id}`}
+                  key={coin.id} 
+                  // Added content-visibility: auto and contain-intrinsic-size
+                  // This tells the browser to skip painting off-screen content but keep the state.
+                  // 'containIntrinsicSize' gives the browser a placeholder height (approx 500px) so the scrollbar doesn't jump.
+                  style={{ contentVisibility: 'auto', containIntrinsicSize: '1px 500px' }}
+                  className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col aspect-square transition-all hover:shadow-md"
+                >
+                  {/* Card Header - Compact */}
+                  <div className="px-3 py-2 border-b border-gray-100 flex justify-between items-center bg-white shrink-0">
+                    <div className="flex items-center gap-2">
+                      <img src={coin.image} alt={coin.name} className="w-6 h-6 rounded-full" loading="lazy" />
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                           <h3 className="font-bold text-gray-800 text-sm">{coin.symbol.toUpperCase()}</h3>
+                           <span className="text-[10px] text-gray-400 bg-gray-100 px-1 py-0.5 rounded">#{coin.market_cap_rank}</span>
                         </div>
-
-                        <div id={chartContainerId} className="flex-grow bg-white relative w-full overflow-hidden border-t border-gray-100 group">
-                            <TradingViewWidget isLogScale={isLogScale} symbol={getTradingViewSymbol(coin.symbol)} interval={interval} />
-                            <button onClick={() => toggleFullscreen(chartContainerId)} className="absolute top-2 right-2 bg-white bg-opacity-90 hover:bg-opacity-100 p-1.5 rounded-md shadow-md border border-gray-200 text-gray-600 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-all duration-200 z-10"><svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg></button>
-                        </div>
+                      </div>
                     </div>
-                    )})}
+                    
+                    <div className="flex items-center">
+                      <button 
+                        onClick={() => toggleFavorite(coin.id)}
+                        className={`p-1.5 rounded-lg hover:bg-gray-100 transition-colors ${favorites.has(coin.id) ? 'text-yellow-400' : 'text-gray-300'}`}
+                      >
+                         ★
+                      </button>
+                      <button 
+                        onClick={() => toggleFullscreen(`card-${coin.id}`)}
+                        className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                      >
+                        ⛶
+                      </button>
+                      <button 
+                        onClick={() => removeCoin(coin.id)}
+                        className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Card Stats Bar - Compact */}
+                  <div className="px-3 py-1.5 bg-gray-50 flex justify-between items-center text-[10px] border-b border-gray-100 overflow-hidden shrink-0">
+                     <div className="flex items-center gap-1">
+                        <span className="text-gray-500">{formatCurrency(coin.current_price)}</span>
+                     </div>
+                     <div className="flex items-center gap-1">
+                        <span className={`font-bold ${getPercentClass(coin.price_change_percentage_24h)} dir-ltr`}>
+                            {coin.price_change_percentage_24h?.toFixed(1)}%
+                        </span>
+                     </div>
+                  </div>
+
+                  {/* Chart Area - Fills remaining space */}
+                  <div className="flex-grow bg-white relative w-full h-full min-h-0">
+                    <LazyWidget>
+                        <TradingViewWidget 
+                          symbol={getTradingViewSymbol(coin.symbol)} 
+                          isLogScale={isLogScale}
+                          interval={interval}
+                        />
+                    </LazyWidget>
+                  </div>
                 </div>
-            )}
-          </>
+              ))}
+            </div>
         )}
       </main>
       
-      <footer className="w-full bg-white border-t border-gray-200 p-4 sticky bottom-0 z-10 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
-        <div className="flex flex-col gap-4">
-            <div className="flex items-center gap-1 overflow-x-auto w-full px-2 pb-2" style={{ scrollbarWidth: 'thin' }}>
-              {getPageNumbers().map((p) => (
-                <button key={p} onClick={() => setPage(p)} onMouseEnter={(e) => onPageEnter(p, e)} onMouseLeave={onPageLeave} disabled={loading} className={`w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-md text-sm font-medium transition-colors border ${p === page ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-100 hover:border-gray-300'}`}>{p}</button>
-              ))}
-            </div>
-             <div className="flex justify-between items-center text-sm text-gray-500 px-2">
-                 <span>نمایش {Math.min((page - 1) * DISPLAY_COUNT + 1, TOTAL_PAGES * DISPLAY_COUNT)} تا {Math.min(page * DISPLAY_COUNT, TOTAL_PAGES * DISPLAY_COUNT)} (تخمینی)</span>
-                 <div className="flex gap-2">
-                     <button disabled={page === 1 || loading} onClick={() => setPage(p => Math.max(1, p - 1))} className="px-3 py-1 bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50">قبلی</button>
-                     <button disabled={page === TOTAL_PAGES || loading} onClick={() => setPage(p => Math.min(TOTAL_PAGES, p + 1))} className="px-3 py-1 bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50">بعدی</button>
-                 </div>
-             </div>
-        </div>
-      </footer>
-
-      {hoveredPageInfo && (
-          <div className="fixed z-50 bg-gray-900 text-white text-xs rounded px-3 py-2 shadow-xl border border-gray-700 pointer-events-none" style={{ top: `${hoveredPageInfo.rect.top - 70}px`, left: `${hoveredPageInfo.rect.left + (hoveredPageInfo.rect.width / 2)}px`, transform: 'translateX(-50%)', minWidth: '160px' }}>
-               <div className="flex flex-col gap-1 text-center">
-                  <div className="font-bold text-yellow-400 mb-1 border-b border-gray-700 pb-1">صفحه {hoveredPageInfo.page}</div>
-                  <div className="flex flex-col mt-1 bg-gray-800 rounded p-1">
-                      <span className="text-gray-400 text-[10px] mb-0.5">میانگین مارکت کپ:</span>
-                      <span className={`font-bold ${isPreviewLoading ? 'text-gray-500 animate-pulse' : 'text-green-400'}`}>{isPreviewLoading ? 'در حال محاسبه...' : previewAvgCap ? `$${formatCompact(previewAvgCap)}` : 'نامشخص'}</span>
-                  </div>
-              </div>
-              <div className="absolute top-full left-1/2 -ml-1 border-4 border-transparent border-t-gray-900"></div>
-          </div>
-      )}
+      {/* Footer Removed */}
     </div>
   );
 };
