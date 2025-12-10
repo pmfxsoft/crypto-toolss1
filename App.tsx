@@ -5,13 +5,14 @@ import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 
 // --- Types ---
-type Category = 'CRYPTO' | 'FOREX' | 'STOCKS';
+type Category = 'CRYPTO' | 'FOREX' | 'STOCKS' | 'GAINERS';
+type ViewMode = 'GRID' | 'TABLE';
 
 interface AssetData {
   id: string;
   symbol: string;
   name: string;
-  type: Category;
+  type: Category | 'CRYPTO'; // GAINERS are technically CRYPTO
   description?: string;
   image?: string;
   current_price?: number;
@@ -27,6 +28,16 @@ interface AssetData {
   high_24h?: number;
   low_24h?: number;
 }
+
+// --- Configuration ---
+const BLOCKED_IDS = new Set([
+  'tether', 'usd-coin', 'dai', 'first-digital-usd', 'ethena-usde', 
+  'usdd', 'true-usd', 'frax', 'wrapped-steth', 
+  'staked-ether', 'wrapped-bitcoin', 'weth', 'lido-staked-ether',
+  'paypal-usd', 'paxos-standard', 'gemini-dollar', 'binance-usd'
+]);
+
+const BLOCKED_SYMBOLS = new Set(['usdt', 'usdc', 'dai', 'fdusd', 'usde', 'tusd', 'usdd', 'busd', 'wsteth']);
 
 // --- Constants & Data ---
 
@@ -206,9 +217,14 @@ const LazyWidget = ({ children }: { children?: React.ReactNode }) => {
 const App: React.FC = () => {
   // --- State ---
   const [activeCategory, setActiveCategory] = useState<Category>('CRYPTO');
+  const [viewMode, setViewMode] = useState<ViewMode>('GRID');
   const [isLogScale, setIsLogScale] = useState(true);
   const [interval, setInterval] = useState("1M");
+  const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
   
+  // Sorting State
+  const [sortConfig, setSortConfig] = useState<{ key: keyof AssetData | null, direction: 'asc' | 'desc' }>({ key: null, direction: 'desc' });
+
   // Grid State
   const [gridCols, setGridCols] = useState(() => {
       if (typeof window !== 'undefined') {
@@ -307,7 +323,7 @@ const App: React.FC = () => {
   // Reset pagination on category change or search
   useEffect(() => {
     setCurrentPage(1);
-  }, [activeCategory, searchQuery, showFavoritesOnly]);
+  }, [activeCategory, searchQuery, showFavoritesOnly, viewMode]);
 
   // Scroll top on page change
   useEffect(() => {
@@ -318,12 +334,39 @@ const App: React.FC = () => {
     }
   }, [currentPage]);
 
+  // Helper function to remove duplicates based on symbol and filter out blacklisted/stablecoins
+  const processAssets = (assets: AssetData[]) => {
+      const seenSymbols = new Set<string>();
+      return assets.filter(asset => {
+          // 1. Check ID Blocklist
+          if (BLOCKED_IDS.has(asset.id)) return false;
+          
+          // 2. Check Symbol Blocklist (Stablecoins)
+          const sym = asset.symbol.toLowerCase();
+          if (BLOCKED_SYMBOLS.has(sym)) return false;
+          if (sym.endsWith('usd') && asset.id !== 'solana' && asset.id !== 'terra-luna-2' && asset.id !== 'near') return false; 
+          if (asset.name.toLowerCase().includes("stablecoin")) return false;
+
+          // 3. Deduplication (Keep first occurrence)
+          if (seenSymbols.has(sym)) return false;
+          seenSymbols.add(sym);
+          
+          return true;
+      });
+  };
 
   // --- Data Fetching Strategy ---
   useEffect(() => {
     // 1. Non-Crypto Handling (Static Data)
     if (activeCategory === 'FOREX') {
-        let data = FOREX_PAIRS.filter(a => !removedIds.has(a.id));
+        // Apply duplicate filter to static lists too
+        let data = processAssets(FOREX_PAIRS);
+        
+        // In TABLE view, show removed items so they can be unblocked. In GRID view, hide them.
+        if (viewMode === 'GRID') {
+            data = data.filter(a => !removedIds.has(a.id));
+        }
+        
         if (showFavoritesOnly) data = data.filter(a => favorites.has(a.id));
         if (searchQuery) {
              const q = searchQuery.toLowerCase();
@@ -334,7 +377,14 @@ const App: React.FC = () => {
         return;
     }
     if (activeCategory === 'STOCKS') {
-        let data = STOCK_DATA.filter(a => !removedIds.has(a.id));
+        // Apply duplicate filter to static lists too
+        let data = processAssets(STOCK_DATA);
+
+        // In TABLE view, show removed items so they can be unblocked. In GRID view, hide them.
+        if (viewMode === 'GRID') {
+             data = data.filter(a => !removedIds.has(a.id));
+        }
+        
         if (showFavoritesOnly) data = data.filter(a => favorites.has(a.id));
         if (searchQuery) {
              const q = searchQuery.toLowerCase();
@@ -345,7 +395,7 @@ const App: React.FC = () => {
         return;
     }
 
-    // 2. Crypto Handling (API Pagination / Search)
+    // 2. Crypto & Gainers Handling (API)
     const controller = new AbortController();
 
     const fetchData = async () => {
@@ -354,8 +404,71 @@ const App: React.FC = () => {
         try {
             let data: AssetData[] = [];
             
-            // CASE A: Show Favorites Only
-            if (showFavoritesOnly) {
+            // CASE A: Gainers - Specific Logic to find Top Movers
+            if (activeCategory === 'GAINERS') {
+                // Fetch Top 750 coins (3 pages x 250) sequentially to respect rate limits
+                const pages = [1, 2, 3];
+                let allCoins: any[] = [];
+                
+                for (const p of pages) {
+                    try {
+                        // Check abort before fetch
+                        if (controller.signal.aborted) break;
+                        
+                        const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page=${p}&sparkline=false&price_change_percentage=24h`;
+                        const res = await fetch(url, { signal: controller.signal });
+                        
+                        if (res.status === 429) {
+                            console.warn("Rate limit hit, stopping fetch");
+                            break; // Stop fetching but use existing data
+                        }
+                        
+                        if (!res.ok) continue;
+                        
+                        const json = await res.json();
+                        if (Array.isArray(json)) {
+                            allCoins = [...allCoins, ...json];
+                        }
+                        
+                        // Small delay to prevent rate limit (free tier allows ~10-30 req/min, so bursts are bad)
+                        if (p !== pages[pages.length - 1]) {
+                             await new Promise(r => setTimeout(r, 1200)); 
+                        }
+
+                    } catch (e: any) {
+                        if (e.name !== 'AbortError') console.error(e);
+                        // If network error, stop loop
+                        break; 
+                    }
+                }
+
+                if (allCoins.length === 0 && !controller.signal.aborted) {
+                     throw new Error("API Limit or Network Error");
+                }
+                
+                // Process Assets: Filter Blocklist, Stablecoins, and Duplicates
+                const cleanedData = processAssets(allCoins);
+
+                // Sort by 24h change descending (GAINERS logic)
+                const sorted = cleanedData.sort((a: any, b: any) => (b.price_change_percentage_24h || 0) - (a.price_change_percentage_24h || 0));
+                
+                // Filter by search if needed
+                let filtered = sorted;
+                if (searchQuery) {
+                    const q = searchQuery.toLowerCase();
+                    filtered = filtered.filter((c: any) => c.symbol.toLowerCase().includes(q) || c.name.toLowerCase().includes(q));
+                }
+
+                if (showFavoritesOnly) {
+                    filtered = filtered.filter((c: any) => favorites.has(c.id));
+                }
+
+                setCryptoTotalCount(filtered.length);
+                const start = (currentPage - 1) * pageSize;
+                data = filtered.slice(start, start + pageSize).map((c: any) => ({ ...c, type: 'CRYPTO' }));
+
+            // CASE B: Show Favorites Only (Standard Crypto)
+            } else if (showFavoritesOnly) {
                 const favIds = Array.from(favorites);
                 if (favIds.length === 0) {
                     setDisplayedAssets([]);
@@ -369,7 +482,9 @@ const App: React.FC = () => {
                 const res = await fetch(url, { signal: controller.signal });
                 const json = await res.json();
                 
-                let filtered = json;
+                // Process Assets: Filter Blocklist, Stablecoins, and Duplicates
+                let filtered = processAssets(json);
+
                 if (searchQuery) {
                     const q = searchQuery.toLowerCase();
                     filtered = filtered.filter((c: any) => c.symbol.toLowerCase().includes(q) || c.name.toLowerCase().includes(q));
@@ -380,30 +495,22 @@ const App: React.FC = () => {
                 data = filtered.slice(start, start + pageSize).map((c: any) => ({ ...c, type: 'CRYPTO' }));
             
             } else {
-                // CASE B: Search Active (Rank or Text)
+                // CASE C: Search Active (Rank or Text) for Standard Crypto
                 const rankQuery = parseInt(searchQuery);
                 
-                // NEW: Search by Rank Logic
                 if (!isNaN(rankQuery) && rankQuery > 0) {
-                    // Calculate which page this rank belongs to
-                    // Note: CoinGecko doesn't have "get by rank", but market_cap_desc follows rank.
                     const targetPage = Math.ceil(rankQuery / pageSize);
-                    
-                    // We must fetch the specific page containing this rank
                     const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${pageSize}&page=${targetPage}&sparkline=false&price_change_percentage=24h,7d,30d,1y`;
                     
                     const res = await fetch(url, { signal: controller.signal });
                     if (!res.ok) throw new Error("API Error");
                     const json = await res.json();
                     
-                    // Filter locally for the specific rank
-                    data = json.filter((c:any) => c.market_cap_rank === rankQuery).map((c: any) => ({ ...c, type: 'CRYPTO' }));
-                    
-                    // Update total count so pagination makes sense around this item (optional, or set to rankQuery to focus)
+                    const cleaned = processAssets(json);
+                    data = cleaned.filter((c:any) => c.market_cap_rank === rankQuery).map((c: any) => ({ ...c, type: 'CRYPTO' }));
                     setCryptoTotalCount(10000); 
 
                 } else if (searchQuery.trim().length > 0) {
-                    // Text Search
                     const searchRes = await fetch(`https://api.coingecko.com/api/v3/search?query=${searchQuery}`, { signal: controller.signal });
                     const searchJson = await searchRes.json();
                     const coins = searchJson.coins || [];
@@ -415,8 +522,7 @@ const App: React.FC = () => {
                         return;
                     }
 
-                    setCryptoTotalCount(coins.length);
-
+                    // For search results, we fetch details to get price/volume/mcap
                     const start = (currentPage - 1) * pageSize;
                     const pageCoins = coins.slice(start, start + pageSize);
                     const ids = pageCoins.map((c: any) => c.id).join(',');
@@ -424,22 +530,29 @@ const App: React.FC = () => {
                     if (ids) {
                         const marketsRes = await fetch(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids}&order=market_cap_desc&sparkline=false&price_change_percentage=24h,7d,30d,1y`, { signal: controller.signal });
                         const marketsJson = await marketsRes.json();
-                        data = marketsJson.map((c: any) => ({ ...c, type: 'CRYPTO' }));
+                        const cleaned = processAssets(marketsJson);
+                        data = cleaned.map((c: any) => ({ ...c, type: 'CRYPTO' }));
+                        setCryptoTotalCount(coins.length); // Approximate
                     }
 
-                // CASE C: Default Market View (Paginated)
+                // CASE D: Default Market View (Paginated)
                 } else {
                     const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${pageSize}&page=${currentPage}&sparkline=false&price_change_percentage=24h,7d,30d,1y`;
                     const res = await fetch(url, { signal: controller.signal });
                     if (!res.ok) throw new Error("Rate Limit or API Error");
                     const json = await res.json();
-                    
-                    data = json.map((c: any) => ({ ...c, type: 'CRYPTO' }));
+                    const cleaned = processAssets(json);
+                    data = cleaned.map((c: any) => ({ ...c, type: 'CRYPTO' }));
                     setCryptoTotalCount(10000); 
                 }
             }
 
-            setDisplayedAssets(data.filter(a => !removedIds.has(a.id)));
+            // In TABLE view, show removed items so they can be unblocked. In GRID view, hide them.
+            if (viewMode === 'TABLE') {
+                setDisplayedAssets(data);
+            } else {
+                setDisplayedAssets(data.filter(a => !removedIds.has(a.id)));
+            }
 
         } catch (err: any) {
             if (err.name !== 'AbortError') {
@@ -456,7 +569,8 @@ const App: React.FC = () => {
         clearTimeout(debounceTimer);
         controller.abort();
     };
-  }, [activeCategory, currentPage, pageSize, searchQuery, showFavoritesOnly]); 
+  }, [activeCategory, currentPage, pageSize, searchQuery, showFavoritesOnly, viewMode, removedIds]); 
+  // Added viewMode and removedIds to dependency so it refetches/refilters when switching views or blocking
 
   // --- Helpers ---
   const formatCurrency = (value?: number) => {
@@ -493,17 +607,14 @@ const App: React.FC = () => {
       return `${val > 0 ? '+' : ''}${val.toFixed(1)}%`;
   };
 
-  const toggleFullscreen = (id: string) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    if (document.fullscreenElement) document.exitFullscreen();
-    else el.requestFullscreen().catch(() => {});
-  };
-
-  const removeAsset = async (id: string) => {
+  const toggleBlockStatus = (id: string) => {
     setRemovedIds((prev) => {
       const newSet = new Set(prev);
-      newSet.add(id);
+      if (newSet.has(id)) {
+          newSet.delete(id); // Unblock
+      } else {
+          newSet.add(id); // Block
+      }
       localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(Array.from(newSet)));
       if (user) {
           const userDocRef = doc(db, 'users', user.uid);
@@ -511,7 +622,6 @@ const App: React.FC = () => {
       }
       return newSet;
     });
-    setDisplayedAssets(prev => prev.filter(a => a.id !== id));
   };
 
   const toggleFavorite = (id: string) => {
@@ -527,6 +637,43 @@ const App: React.FC = () => {
           return newSet;
       });
   };
+
+  // Sorting Helper
+  const handleSort = (key: keyof AssetData) => {
+    setSortConfig(current => {
+        // If clicking the same key, toggle direction
+        if (current.key === key) {
+             // If currently desc, go to asc
+             return { key, direction: current.direction === 'desc' ? 'asc' : 'desc' };
+        }
+        // New key, default to desc for metrics, asc for rank
+        // Rank -> Ascending (1, 2, 3...)
+        // Others (Price, Vol, Change) -> Descending (High to Low)
+        const defaultDir = key === 'market_cap_rank' ? 'asc' : 'desc';
+        return { key, direction: defaultDir };
+    });
+  };
+
+  const getSortIndicator = (key: keyof AssetData) => {
+    if (sortConfig.key !== key) return <span className="text-gray-300 text-xs ml-1 opacity-0 group-hover:opacity-50 transition-opacity">⇅</span>;
+    return <span className="text-blue-600 text-xs ml-1">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>;
+  };
+
+  // Memoized sorted data
+  const sortedAssets = useMemo(() => {
+    let data = [...displayedAssets];
+    if (sortConfig.key) {
+        data.sort((a, b) => {
+            // Handle potential undefined/null values safely
+            const valA = (a[sortConfig.key!] as number) ?? (sortConfig.direction === 'asc' ? Infinity : -Infinity);
+            const valB = (b[sortConfig.key!] as number) ?? (sortConfig.direction === 'asc' ? Infinity : -Infinity);
+            
+            if (sortConfig.direction === 'asc') return valA - valB;
+            return valB - valA;
+        });
+    }
+    return data;
+  }, [displayedAssets, sortConfig]);
 
   const handleSaveLayout = () => {
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(Array.from(removedIds)));
@@ -573,6 +720,23 @@ const App: React.FC = () => {
       return '';
   };
   
+  const toggleFullscreen = (elementId: string) => {
+      const element = document.getElementById(elementId);
+      if (!element) return;
+      
+      if (!document.fullscreenElement) {
+          element.requestFullscreen().catch((err) => {
+              console.error(`Error attempting to enable full-screen mode: ${err.message}`);
+          });
+      } else {
+          document.exitFullscreen();
+      }
+  };
+
+  const removeAsset = (id: string) => {
+      toggleBlockStatus(id);
+  };
+  
   // Smart Card Height Logic using viewport height (100vh) to avoid page scrolling for the card itself
   // Adjusts to fill the screen minus header and padding
   const cardHeightClass = 'h-[calc(100vh-140px)] min-h-[500px]';
@@ -581,9 +745,9 @@ const App: React.FC = () => {
   const totalPages = Math.ceil(cryptoTotalCount / pageSize);
 
   return (
-    <div className="min-h-screen flex flex-col font-sans bg-gray-50">
+    <div className="min-h-screen flex flex-col font-sans bg-gray-50 text-right">
       {/* Header */}
-      <header className="bg-white shadow-sm z-20 sticky top-0">
+      <header className="bg-white shadow-sm z-20 sticky top-0 border-b border-gray-200">
         <div className="max-w-[1920px] mx-auto px-4 py-3">
           <div className="flex flex-col xl:flex-row justify-between items-center gap-4">
             
@@ -595,22 +759,28 @@ const App: React.FC = () => {
               </h1>
 
               {/* Category Tabs */}
-              <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg">
+              <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg overflow-x-auto max-w-[100vw] md:max-w-none">
                 <button 
                   onClick={() => setActiveCategory('CRYPTO')} 
-                  className={`px-3 py-1.5 rounded-md text-sm font-semibold transition-all ${activeCategory === 'CRYPTO' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                  className={`px-3 py-1.5 rounded-md text-sm font-semibold transition-all whitespace-nowrap ${activeCategory === 'CRYPTO' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                 >
                   کریپتو
                 </button>
                 <button 
+                  onClick={() => setActiveCategory('GAINERS')} 
+                  className={`px-3 py-1.5 rounded-md text-sm font-semibold transition-all whitespace-nowrap ${activeCategory === 'GAINERS' ? 'bg-white text-green-600 shadow-sm' : 'text-gray-500 hover:text-green-600'}`}
+                >
+                  بیشترین سود
+                </button>
+                <button 
                   onClick={() => setActiveCategory('FOREX')} 
-                  className={`px-3 py-1.5 rounded-md text-sm font-semibold transition-all ${activeCategory === 'FOREX' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                  className={`px-3 py-1.5 rounded-md text-sm font-semibold transition-all whitespace-nowrap ${activeCategory === 'FOREX' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                 >
                   فارکس
                 </button>
                 <button 
                   onClick={() => setActiveCategory('STOCKS')} 
-                  className={`px-3 py-1.5 rounded-md text-sm font-semibold transition-all ${activeCategory === 'STOCKS' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                  className={`px-3 py-1.5 rounded-md text-sm font-semibold transition-all whitespace-nowrap ${activeCategory === 'STOCKS' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                 >
                   بازار سهام
                 </button>
@@ -639,6 +809,16 @@ const App: React.FC = () => {
             {/* Right: Controls */}
             <div className="flex flex-wrap items-center justify-center gap-2 w-full xl:w-auto">
               
+              {/* View Toggle Button */}
+               <button 
+                  onClick={() => setViewMode(viewMode === 'GRID' ? 'TABLE' : 'GRID')}
+                  className={`px-4 py-2 rounded-lg text-sm font-bold transition-all shadow-sm border ${viewMode === 'TABLE' 
+                      ? 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700' 
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
+               >
+                  {viewMode === 'GRID' ? '📋 لیست ارزها و مسدودی' : '📊 نمای چارت‌ها'}
+               </button>
+
               <button
                 onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
                 className={`px-3 py-2 rounded-lg border text-sm font-medium transition-colors flex items-center gap-1 ${showFavoritesOnly ? 'bg-yellow-50 border-yellow-300 text-yellow-700' : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'}`}
@@ -662,21 +842,24 @@ const App: React.FC = () => {
                   </select>
               </div>
 
-              <div className="h-6 w-px bg-gray-300 hidden md:block" />
-
-              {/* Grid Columns Selector */}
-              <div className="flex items-center gap-1 bg-gray-50 px-2 py-1 rounded-lg border border-gray-200">
-                 <span className="text-xs text-gray-500 uppercase">ستون:</span>
-                 <select 
-                    value={gridCols} 
-                    onChange={(e) => setGridCols(Number(e.target.value))}
-                    className="bg-transparent text-sm font-semibold outline-none text-gray-700"
-                  >
-                    <option value={1}>1</option>
-                    <option value={2}>2</option>
-                    <option value={3}>3</option>
-                  </select>
-              </div>
+              {viewMode === 'GRID' && (
+                <>
+                  <div className="h-6 w-px bg-gray-300 hidden md:block" />
+                  {/* Grid Columns Selector */}
+                  <div className="flex items-center gap-1 bg-gray-50 px-2 py-1 rounded-lg border border-gray-200">
+                     <span className="text-xs text-gray-500 uppercase">ستون:</span>
+                     <select 
+                        value={gridCols} 
+                        onChange={(e) => setGridCols(Number(e.target.value))}
+                        className="bg-transparent text-sm font-semibold outline-none text-gray-700"
+                      >
+                        <option value={1}>1</option>
+                        <option value={2}>2</option>
+                        <option value={3}>3</option>
+                      </select>
+                  </div>
+                </>
+              )}
 
               <div className="h-6 w-px bg-gray-300 hidden md:block" />
 
@@ -699,7 +882,7 @@ const App: React.FC = () => {
 
               <div className="h-6 w-px bg-gray-300 hidden md:block" />
 
-              {/* Settings Action Buttons (Moved from Dropdown) */}
+              {/* Settings Action Buttons */}
               <div className="flex items-center gap-1">
                 <button 
                     onClick={handleSaveLayout} 
@@ -737,7 +920,7 @@ const App: React.FC = () => {
       </header>
 
       {/* Main Content */}
-      <main ref={mainContentRef} className="flex-grow p-4 md:p-6 bg-gray-100">
+      <main ref={mainContentRef} className="flex-grow p-4 md:p-6 bg-gray-50">
         
         {/* Loading/Error States */}
         {loading && (
@@ -752,187 +935,334 @@ const App: React.FC = () => {
             </div>
         )}
 
-        {(!loading && displayedAssets.length === 0) ? (
+        {(!loading && sortedAssets.length === 0) ? (
             <div className="flex flex-col items-center justify-center h-96 text-center">
                 <p className="text-gray-500 text-lg">موردی یافت نشد.</p>
                 {searchQuery && <p className="text-gray-400 mt-2">برای "{searchQuery}" نتیجه‌ای پیدا نشد.</p>}
             </div>
         ) : (
             <>
-                <div className={`grid gap-6 ${
-                  gridCols === 1 ? 'grid-cols-1' : 
-                  gridCols === 2 ? 'grid-cols-1 md:grid-cols-2' : 
-                  'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
-                }`}>
-                  {displayedAssets.map((asset) => {
-                      const hasDetails = asset.type === 'CRYPTO';
-                      // Calculate "To ATH" percentage if applicable
-                      const toAth = asset.ath && asset.current_price ? ((asset.ath - asset.current_price) / asset.current_price) * 100 : 0;
-                      
-                      return (
-                    <div 
-                      id={`card-${asset.id}`}
-                      key={asset.id} 
-                      style={{ contentVisibility: 'auto', containIntrinsicSize: '1px 500px' }}
-                      className={`bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col ${cardHeightClass} transition-all hover:shadow-md`}
-                    >
-                      {/* 1. Header */}
-                      <div className="px-3 py-2 border-b border-gray-100 flex justify-between items-center bg-white shrink-0">
-                        <div className="flex items-center gap-2 overflow-hidden">
-                          <img src={getImage(asset)} alt={asset.name} className="w-8 h-8 rounded-full object-contain flex-shrink-0" loading="lazy" onError={(e) => (e.currentTarget.style.display = 'none')} />
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-1.5">
-                               <h3 className="font-bold text-gray-800 text-xl truncate">{asset.symbol.split(':').pop()?.toUpperCase()}</h3>
-                               {hasDetails && (
-                                 <span className="text-sm text-gray-500 bg-gray-100 px-2 py-0.5 rounded font-medium flex-shrink-0">#{asset.market_cap_rank || '-'}</span>
-                               )}
-                               {!hasDetails && (
-                                 <span className="text-xs text-gray-400 bg-gray-50 px-1 py-0.5 rounded uppercase flex-shrink-0">{asset.type}</span>
-                               )}
-                            </div>
-                            <p className="text-sm font-bold text-gray-500 truncate max-w-[150px]">{asset.name}</p>
-                          </div>
-                        </div>
+               {/* --- GRID VIEW (Default) --- */}
+               {viewMode === 'GRID' && (
+                  <div className={`grid gap-6 ${
+                    gridCols === 1 ? 'grid-cols-1' : 
+                    gridCols === 2 ? 'grid-cols-1 md:grid-cols-2' : 
+                    'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
+                  }`}>
+                    {sortedAssets.map((asset) => {
+                        const hasDetails = asset.type === 'CRYPTO';
+                        // Calculate "To ATH" percentage if applicable
+                        const toAth = asset.ath && asset.current_price ? ((asset.ath - asset.current_price) / asset.current_price) * 100 : 0;
                         
-                        <div className="flex items-center flex-shrink-0">
-                          <button 
-                            onClick={() => toggleFavorite(asset.id)}
-                            className={`p-1.5 rounded-lg hover:bg-gray-100 transition-colors ${favorites.has(asset.id) ? 'text-yellow-400' : 'text-gray-300'}`}
-                          >
-                             <span className="text-xl">★</span>
-                          </button>
-                          <button 
-                            onClick={() => toggleFullscreen(`card-${asset.id}`)}
-                            className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                          >
-                            <span className="text-xl">⛶</span>
-                          </button>
-                          <button 
-                            onClick={() => removeAsset(asset.id)}
-                            className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                          >
-                            <span className="text-xl">✕</span>
-                          </button>
+                        return (
+                      <div 
+                        id={`card-${asset.id}`}
+                        key={asset.id} 
+                        style={{ contentVisibility: 'auto', containIntrinsicSize: '1px 500px' }}
+                        className={`bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col ${cardHeightClass} transition-all hover:shadow-md`}
+                      >
+                        {/* 1. Header */}
+                        <div className="px-4 py-3 border-b border-gray-100 flex justify-between items-center bg-white shrink-0">
+                          <div className="flex items-center gap-3 overflow-hidden">
+                            <img src={getImage(asset)} alt={asset.name} className="w-10 h-10 rounded-full object-contain flex-shrink-0" loading="lazy" onError={(e) => (e.currentTarget.style.display = 'none')} />
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                 <h3 className="font-bold text-gray-800 text-2xl truncate">{asset.symbol.split(':').pop()?.toUpperCase()}</h3>
+                                 {hasDetails && (
+                                   <span className="text-base text-gray-500 bg-gray-100 px-2 py-0.5 rounded font-medium flex-shrink-0">#{asset.market_cap_rank || '-'}</span>
+                                 )}
+                                 {!hasDetails && (
+                                   <span className="text-sm text-gray-400 bg-gray-50 px-1 py-0.5 rounded uppercase flex-shrink-0">{asset.type}</span>
+                                 )}
+                              </div>
+                              <p className="text-base font-bold text-gray-500 truncate max-w-[200px]">{asset.name}</p>
+                            </div>
+                          </div>
+                          
+                          <div className="flex items-center flex-shrink-0 gap-1">
+                            <button 
+                              onClick={() => toggleFavorite(asset.id)}
+                              className={`p-2 rounded-lg hover:bg-gray-100 transition-colors ${favorites.has(asset.id) ? 'text-yellow-400' : 'text-gray-300'}`}
+                            >
+                               <span className="text-2xl">★</span>
+                            </button>
+                            <button 
+                              onClick={() => toggleFullscreen(`card-${asset.id}`)}
+                              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                            >
+                              <span className="text-2xl">⛶</span>
+                            </button>
+                            <button 
+                              onClick={() => removeAsset(asset.id)}
+                              className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                            >
+                              <span className="text-2xl">✕</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* 2. Primary Stats */}
+                        {hasDetails && (
+                            <div className="px-5 py-4 bg-gray-50 flex justify-between items-center border-b border-gray-100 shrink-0 h-[65px]">
+                               <div className="flex items-center gap-1">
+                                  <span className="text-gray-800 font-bold text-3xl">{formatCurrency(asset.current_price)}</span>
+                               </div>
+                               <div className="flex items-center gap-1">
+                                  <span className={`font-bold text-lg ${getPercentClass(asset.price_change_percentage_24h)} dir-ltr`}>
+                                      {fmtPct(asset.price_change_percentage_24h)} (24h)
+                                  </span>
+                               </div>
+                            </div>
+                        )}
+
+                        {/* 3. Detailed Stats */}
+                        {hasDetails ? (
+                            <div className="grid grid-cols-3 gap-x-4 gap-y-2 p-4 text-base bg-white border-b border-gray-100 text-gray-600 shrink-0 h-[140px]">
+                                {/* Column 1: Historical Changes */}
+                                <div className="flex flex-col gap-1.5">
+                                    <div className="flex justify-between">
+                                        <span className="font-semibold text-gray-600">7d:</span>
+                                        <span className={`font-bold ${getPercentClass(asset.price_change_percentage_7d_in_currency)}`}>{fmtPct(asset.price_change_percentage_7d_in_currency)}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="font-semibold text-gray-600">30d:</span>
+                                        <span className={`font-bold ${getPercentClass(asset.price_change_percentage_30d_in_currency)}`}>{fmtPct(asset.price_change_percentage_30d_in_currency)}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="font-semibold text-gray-600">1y:</span>
+                                        <span className={`font-bold ${getPercentClass(asset.price_change_percentage_1y_in_currency)}`}>{fmtPct(asset.price_change_percentage_1y_in_currency)}</span>
+                                    </div>
+                                </div>
+
+                                {/* Column 2: ATH Data */}
+                                <div className="flex flex-col gap-1.5 border-l border-gray-100 pl-3">
+                                    <div className="flex justify-between" title="All Time High Price">
+                                        <span className="font-semibold text-gray-600">ATH:</span>
+                                        <span className="font-bold text-gray-700">{formatCompact(asset.ath)}</span>
+                                    </div>
+                                    <div className="flex justify-between" title="Down from ATH">
+                                        <span className="font-semibold text-gray-600">Drop:</span>
+                                        <span className="font-bold text-red-500">{fmtPct(asset.ath_change_percentage)}</span>
+                                    </div>
+                                    <div className="flex justify-between" title="Needed to reach ATH">
+                                        <span className="font-semibold text-gray-600">To ATH:</span>
+                                        <span className="font-bold text-green-600">+{toAth.toFixed(0)}%</span>
+                                    </div>
+                                </div>
+
+                                {/* Column 3: Market Data */}
+                                <div className="flex flex-col gap-1.5 border-l border-gray-100 pl-3">
+                                     <div className="flex justify-between">
+                                        <span className="font-semibold text-gray-600">Cap:</span>
+                                        <span className="font-bold text-gray-700">{formatCompact(asset.market_cap)}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="font-semibold text-gray-600">Vol:</span>
+                                        <span className="font-bold text-gray-700">{formatCompact(asset.total_volume)}</span>
+                                    </div>
+                                    <div className="flex justify-between" title={`H: ${formatCurrency(asset.high_24h)} L: ${formatCurrency(asset.low_24h)}`}>
+                                        <span className="font-semibold text-gray-600">H/L:</span>
+                                        <span className="font-bold text-gray-500">Info</span>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            // Description for non-crypto assets
+                            <div className="px-5 py-4 bg-white border-b border-gray-100 shrink-0 h-[120px] overflow-hidden">
+                                <p className="text-base text-gray-500 leading-relaxed text-right line-clamp-4">
+                                    {asset.description || 'اطلاعات بیشتری در دسترس نیست.'}
+                                </p>
+                            </div>
+                        )}
+
+                        {/* 4. Chart */}
+                        <div className="flex-grow bg-white relative w-full h-full min-h-0">
+                          <LazyWidget>
+                              <TradingViewWidget 
+                                symbol={getTradingViewSymbol(asset)} 
+                                isLogScale={isLogScale}
+                                interval={interval}
+                              />
+                          </LazyWidget>
                         </div>
                       </div>
+                    )})}
+                  </div>
+               )}
 
-                      {/* 2. Primary Stats */}
-                      {hasDetails && (
-                          <div className="px-4 py-3 bg-gray-50 flex justify-between items-center border-b border-gray-100 shrink-0 h-[55px]">
-                             <div className="flex items-center gap-1">
-                                <span className="text-gray-800 font-bold text-2xl">{formatCurrency(asset.current_price)}</span>
-                             </div>
-                             <div className="flex items-center gap-1">
-                                <span className={`font-bold text-base ${getPercentClass(asset.price_change_percentage_24h)} dir-ltr`}>
-                                    {fmtPct(asset.price_change_percentage_24h)} (24h)
-                                </span>
-                             </div>
-                          </div>
-                      )}
+               {/* --- TABLE VIEW (CoinGecko Style) --- */}
+               {viewMode === 'TABLE' && (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-right text-base">
+                            <thead className="bg-gray-50 text-gray-600 font-bold text-sm uppercase border-b border-gray-200 sticky top-0 z-10 select-none">
+                                <tr>
+                                    <th 
+                                      className="px-4 py-4 whitespace-nowrap w-20 cursor-pointer hover:bg-gray-100 transition-colors group"
+                                      onClick={() => handleSort('market_cap_rank')}
+                                      title="مرتب‌سازی بر اساس رنک (حالت پیش‌فرض)"
+                                    >
+                                      # {getSortIndicator('market_cap_rank')}
+                                    </th>
+                                    <th className="px-4 py-4 text-right">نام ارز</th>
+                                    <th className="px-4 py-4 text-right">قیمت</th>
+                                    <th 
+                                      className="px-4 py-4 text-right cursor-pointer hover:bg-gray-100 transition-colors group"
+                                      onClick={() => handleSort('price_change_percentage_24h')}
+                                    >
+                                      24h {getSortIndicator('price_change_percentage_24h')}
+                                    </th>
+                                    <th 
+                                      className="px-4 py-4 text-right cursor-pointer hover:bg-gray-100 transition-colors group"
+                                      onClick={() => handleSort('price_change_percentage_7d_in_currency')}
+                                    >
+                                      7d {getSortIndicator('price_change_percentage_7d_in_currency')}
+                                    </th>
+                                    <th 
+                                      className="px-4 py-4 text-right cursor-pointer hover:bg-gray-100 transition-colors group"
+                                      onClick={() => handleSort('market_cap')}
+                                    >
+                                      ارزش بازار {getSortIndicator('market_cap')}
+                                    </th>
+                                    <th 
+                                      className="px-4 py-4 text-right cursor-pointer hover:bg-gray-100 transition-colors group"
+                                      onClick={() => handleSort('total_volume')}
+                                    >
+                                      حجم {getSortIndicator('total_volume')}
+                                    </th>
+                                    <th className="px-4 py-4 text-center w-24 bg-gray-100 text-gray-700 border-r">مسدودی</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                                {sortedAssets.map((asset) => {
+                                    const isBlocked = removedIds.has(asset.id);
+                                    const isExpanded = expandedRowId === asset.id;
+                                    
+                                    // Row styling: active state for expanded row
+                                    const rowClass = isBlocked 
+                                        ? "bg-red-50 hover:bg-red-100 transition-colors border-b border-gray-100" 
+                                        : isExpanded
+                                            ? "bg-blue-50 border-b-0 border-gray-100 cursor-pointer"
+                                            : "bg-white hover:bg-gray-50 transition-colors border-b border-gray-100 cursor-pointer group";
 
-                      {/* 3. Detailed Stats */}
-                      {hasDetails ? (
-                          <div className="grid grid-cols-3 gap-x-3 gap-y-2 p-3 text-sm bg-white border-b border-gray-100 text-gray-600 shrink-0 h-[115px]">
-                              {/* Column 1: Historical Changes */}
-                              <div className="flex flex-col gap-1">
-                                  <div className="flex justify-between">
-                                      <span className="font-semibold text-gray-600">7d:</span>
-                                      <span className={`font-bold ${getPercentClass(asset.price_change_percentage_7d_in_currency)}`}>{fmtPct(asset.price_change_percentage_7d_in_currency)}</span>
-                                  </div>
-                                  <div className="flex justify-between">
-                                      <span className="font-semibold text-gray-600">30d:</span>
-                                      <span className={`font-bold ${getPercentClass(asset.price_change_percentage_30d_in_currency)}`}>{fmtPct(asset.price_change_percentage_30d_in_currency)}</span>
-                                  </div>
-                                  <div className="flex justify-between">
-                                      <span className="font-semibold text-gray-600">1y:</span>
-                                      <span className={`font-bold ${getPercentClass(asset.price_change_percentage_1y_in_currency)}`}>{fmtPct(asset.price_change_percentage_1y_in_currency)}</span>
-                                  </div>
-                              </div>
+                                    return (
+                                        <React.Fragment key={asset.id}>
+                                            <tr 
+                                                className={rowClass}
+                                                onClick={(e) => {
+                                                    if ((e.target as HTMLElement).closest('.no-click')) return;
+                                                    setExpandedRowId(prev => prev === asset.id ? null : asset.id);
+                                                }}
+                                            >
+                                                <td className="px-4 py-5 whitespace-nowrap text-gray-500 font-medium text-lg no-click cursor-default">
+                                                    <div className="flex items-center gap-3">
+                                                        <button 
+                                                            onClick={(e) => { e.stopPropagation(); toggleFavorite(asset.id); }}
+                                                            className={`text-2xl transition-colors ${favorites.has(asset.id) ? 'text-yellow-400' : 'text-gray-300 hover:text-yellow-400'}`}
+                                                        >
+                                                            ★
+                                                        </button>
+                                                        <span>{asset.market_cap_rank || '-'}</span>
+                                                    </div>
+                                                </td>
+                                                <td className="px-4 py-5">
+                                                    <div className="flex items-center gap-4">
+                                                        <img src={getImage(asset)} alt={asset.name} className="w-8 h-8 rounded-full" loading="lazy" />
+                                                        <div className="flex flex-col">
+                                                            <span className="font-bold text-gray-900 text-lg group-hover:text-blue-600 transition-colors">{asset.name}</span>
+                                                            <span className="text-sm text-gray-500 uppercase">{asset.symbol.split(':').pop()}</span>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                                <td className="px-4 py-5 font-bold text-gray-900 text-lg">
+                                                    {formatCurrency(asset.current_price)}
+                                                </td>
+                                                <td className={`px-4 py-5 font-bold text-lg dir-ltr text-right ${getPercentClass(asset.price_change_percentage_24h)}`}>
+                                                    {fmtPct(asset.price_change_percentage_24h)}
+                                                </td>
+                                                <td className={`px-4 py-5 font-bold text-lg dir-ltr text-right ${getPercentClass(asset.price_change_percentage_7d_in_currency)}`}>
+                                                    {fmtPct(asset.price_change_percentage_7d_in_currency)}
+                                                </td>
+                                                <td className="px-4 py-5 text-gray-600 text-lg">
+                                                    {formatCompact(asset.market_cap)}
+                                                </td>
+                                                <td className="px-4 py-5 text-gray-600 text-lg">
+                                                    {formatCompact(asset.total_volume)}
+                                                </td>
+                                                <td className="px-4 py-5 text-center border-r border-gray-100 no-click">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={isBlocked}
+                                                        onChange={() => toggleBlockStatus(asset.id)}
+                                                        className="w-6 h-6 text-red-600 rounded border-gray-300 focus:ring-red-500 cursor-pointer"
+                                                        title={isBlocked ? "بازگردانی به لیست" : "مسدود کردن"}
+                                                        onClick={(e) => e.stopPropagation()}
+                                                    />
+                                                </td>
+                                            </tr>
+                                            {/* Expanded Row */}
+                                            {isExpanded && (
+                                                <tr>
+                                                    <td colSpan={8} className="p-0 border-b border-gray-200 animate-[fadeIn_0.3s_ease-out]">
+                                                         <div className="w-full h-[1000px] bg-white relative border-t border-blue-100 shadow-inner">
+                                                            {/* Close Button overlay */}
+                                                            <button 
+                                                                onClick={(e) => { e.stopPropagation(); setExpandedRowId(null); }}
+                                                                className="absolute top-4 left-4 z-10 bg-white text-gray-400 hover:text-red-600 border border-gray-200 rounded-lg p-2 shadow-sm transition-all hover:scale-105"
+                                                            >
+                                                                بستن ✕
+                                                            </button>
 
-                              {/* Column 2: ATH Data */}
-                              <div className="flex flex-col gap-1 border-l border-gray-100 pl-2">
-                                  <div className="flex justify-between" title="All Time High Price">
-                                      <span className="font-semibold text-gray-600">ATH:</span>
-                                      <span className="font-bold text-gray-700">{formatCompact(asset.ath)}</span>
-                                  </div>
-                                  <div className="flex justify-between" title="Down from ATH">
-                                      <span className="font-semibold text-gray-600">Drop:</span>
-                                      <span className="font-bold text-red-500">{fmtPct(asset.ath_change_percentage)}</span>
-                                  </div>
-                                  <div className="flex justify-between" title="Needed to reach ATH">
-                                      <span className="font-semibold text-gray-600">To ATH:</span>
-                                      <span className="font-bold text-green-600">+{toAth.toFixed(0)}%</span>
-                                  </div>
-                              </div>
-
-                              {/* Column 3: Market Data */}
-                              <div className="flex flex-col gap-1 border-l border-gray-100 pl-2">
-                                   <div className="flex justify-between">
-                                      <span className="font-semibold text-gray-600">Cap:</span>
-                                      <span className="font-bold text-gray-700">{formatCompact(asset.market_cap)}</span>
-                                  </div>
-                                  <div className="flex justify-between">
-                                      <span className="font-semibold text-gray-600">Vol:</span>
-                                      <span className="font-bold text-gray-700">{formatCompact(asset.total_volume)}</span>
-                                  </div>
-                                  <div className="flex justify-between" title={`H: ${formatCurrency(asset.high_24h)} L: ${formatCurrency(asset.low_24h)}`}>
-                                      <span className="font-semibold text-gray-600">H/L:</span>
-                                      <span className="font-bold text-gray-500">Info</span>
-                                  </div>
-                              </div>
-                          </div>
-                      ) : (
-                          // Description for non-crypto assets
-                          <div className="px-4 py-3 bg-white border-b border-gray-100 shrink-0 h-[100px] overflow-hidden">
-                              <p className="text-sm text-gray-500 leading-relaxed text-right line-clamp-4">
-                                  {asset.description || 'اطلاعات بیشتری در دسترس نیست.'}
-                              </p>
-                          </div>
-                      )}
-
-                      {/* 4. Chart */}
-                      <div className="flex-grow bg-white relative w-full h-full min-h-0">
-                        <LazyWidget>
-                            <TradingViewWidget 
-                              symbol={getTradingViewSymbol(asset)} 
-                              isLogScale={isLogScale}
-                              interval={interval}
-                            />
-                        </LazyWidget>
-                      </div>
+                                                            {/* Chart */}
+                                                            <LazyWidget>
+                                                                <TradingViewWidget 
+                                                                    symbol={getTradingViewSymbol(asset)} 
+                                                                    isLogScale={isLogScale}
+                                                                    interval={interval}
+                                                                />
+                                                            </LazyWidget>
+                                                         </div>
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </React.Fragment>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
                     </div>
-                  )})}
                 </div>
+               )}
 
                 {/* Pagination Controls */}
                 <div className="mt-8 flex flex-col items-center gap-4">
-                    <span className="text-sm text-gray-500">
+                    <span className="text-base text-gray-500">
                         نمایش {((currentPage - 1) * pageSize) + 1} تا {Math.min(currentPage * pageSize, cryptoTotalCount)} از {cryptoTotalCount} مورد
                     </span>
                     <div className="flex items-center gap-2 bg-white p-2 rounded-lg shadow-sm border border-gray-200">
                         <button 
                             onClick={() => setCurrentPage(1)} 
                             disabled={currentPage === 1}
-                            className="px-3 py-1.5 text-sm rounded bg-gray-50 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed text-gray-600"
+                            className="px-4 py-2 text-base rounded bg-gray-50 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed text-gray-600"
                         >
                             اولین
                         </button>
                         <button 
                             onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))} 
                             disabled={currentPage === 1}
-                            className="px-3 py-1.5 text-sm rounded bg-gray-50 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed text-gray-600"
+                            className="px-4 py-2 text-base rounded bg-gray-50 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed text-gray-600"
                         >
                             قبلی
                         </button>
                         
-                        <div className="px-4 py-1.5 text-sm font-semibold text-blue-600 bg-blue-50 rounded">
+                        <div className="px-5 py-2 text-base font-semibold text-blue-600 bg-blue-50 rounded">
                             صفحه {currentPage} از {totalPages || 1}
                         </div>
 
                         <button 
                             onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))} 
                             disabled={currentPage >= totalPages}
-                            className="px-3 py-1.5 text-sm rounded bg-gray-50 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed text-gray-600"
+                            className="px-4 py-2 text-base rounded bg-gray-50 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed text-gray-600"
                         >
                             بعدی
                         </button>
@@ -940,6 +1270,7 @@ const App: React.FC = () => {
                 </div>
             </>
         )}
+
       </main>
     </div>
   );
