@@ -12,8 +12,8 @@ interface AssetData {
   symbol: string;
   name: string;
   type: Category;
+  description?: string;
   image?: string;
-  // Optional Stats (Available mostly for Crypto via CoinGecko)
   current_price?: number;
   market_cap?: number;
   market_cap_rank?: number;
@@ -30,95 +30,60 @@ interface AssetData {
 
 // --- Constants & Data ---
 
-// List of stablecoins to exclude (Crypto only)
-const STABLE_COINS = [
-  'usdt', 'usdc', 'dai', 'fdusd', 'tusd', 'usdd', 
-  'pyusd', 'usde', 'frax', 'busd', 'gusd', 'usdp', 
-  'eurs', 'lusd', 'susd', 'usds', 'crvusd', 'mim', 
-  'alusd', 'dola', 'fei', 'ustc', 'gemini-dollar'
-];
-
-// Forex Pairs List
+// Static data for Forex and Stocks
 const FOREX_PAIRS: AssetData[] = [
-  { id: 'fx-eurusd', symbol: 'EURUSD', name: 'Euro / US Dollar', type: 'FOREX' },
-  { id: 'fx-gbpusd', symbol: 'GBPUSD', name: 'British Pound / US Dollar', type: 'FOREX' },
-  { id: 'fx-usdjpy', symbol: 'USDJPY', name: 'US Dollar / Japanese Yen', type: 'FOREX' },
-  { id: 'fx-usdchf', symbol: 'USDCHF', name: 'US Dollar / Swiss Franc', type: 'FOREX' },
-  { id: 'fx-audusd', symbol: 'AUDUSD', name: 'Australian Dollar / US Dollar', type: 'FOREX' },
-  { id: 'fx-usdcad', symbol: 'USDCAD', name: 'US Dollar / Canadian Dollar', type: 'FOREX' },
-  { id: 'fx-nzdusd', symbol: 'NZDUSD', name: 'New Zealand Dollar / US Dollar', type: 'FOREX' },
-  { id: 'fx-eurgbp', symbol: 'EURGBP', name: 'Euro / British Pound', type: 'FOREX' },
-  { id: 'fx-eurjpy', symbol: 'EURJPY', name: 'Euro / Japanese Yen', type: 'FOREX' },
-  { id: 'fx-gbpjpy', symbol: 'GBPJPY', name: 'British Pound / Japanese Yen', type: 'FOREX' },
-  { id: 'fx-chfjpy', symbol: 'CHFJPY', name: 'Swiss Franc / Japanese Yen', type: 'FOREX' },
-  { id: 'fx-audjpy', symbol: 'AUDJPY', name: 'Australian Dollar / Japanese Yen', type: 'FOREX' },
-  { id: 'fx-cadjpy', symbol: 'CADJPY', name: 'Canadian Dollar / Japanese Yen', type: 'FOREX' },
-  { id: 'fx-euraud', symbol: 'EURAUD', name: 'Euro / Australian Dollar', type: 'FOREX' },
-  { id: 'fx-eurchf', symbol: 'EURCHF', name: 'Euro / Swiss Franc', type: 'FOREX' },
-  { id: 'fx-gbpchf', symbol: 'GBPCHF', name: 'British Pound / Swiss Franc', type: 'FOREX' },
-  { id: 'fx-xauusd', symbol: 'XAUUSD', name: 'Gold / US Dollar', type: 'FOREX' },
-  { id: 'fx-xagusd', symbol: 'XAGUSD', name: 'Silver / US Dollar', type: 'FOREX' },
+  { id: 'fx-eurusd', symbol: 'EURUSD', name: 'Euro / US Dollar', type: 'FOREX', description: 'جفت ارز یورو به دلار آمریکا، پرمعامله‌ترین جفت ارز در بازار فارکس.' },
+  { id: 'fx-gbpusd', symbol: 'GBPUSD', name: 'British Pound / US Dollar', type: 'FOREX', description: 'پوند استرلینگ بریتانیا در برابر دلار آمریکا، معروف به "کابل".' },
+  { id: 'fx-usdjpy', symbol: 'USDJPY', name: 'US Dollar / Japanese Yen', type: 'FOREX', description: 'دلار آمریکا در برابر ین ژاپن.' },
+  { id: 'fx-usdchf', symbol: 'USDCHF', name: 'US Dollar / Swiss Franc', type: 'FOREX', description: 'دلار آمریکا در برابر فرانک سوئیس، ارز امن اروپا.' },
+  { id: 'fx-audusd', symbol: 'AUDUSD', name: 'Australian Dollar / US Dollar', type: 'FOREX', description: 'دلار استرالیا در برابر دلار آمریکا.' },
+  { id: 'fx-usdcad', symbol: 'USDCAD', name: 'US Dollar / Canadian Dollar', type: 'FOREX', description: 'دلار آمریکا در برابر دلار کانادا.' },
+  { id: 'fx-xauusd', symbol: 'XAUUSD', name: 'Gold / US Dollar', type: 'FOREX', description: 'قیمت لحظه‌ای طلا به دلار آمریکا.' },
+  { id: 'fx-xagusd', symbol: 'XAGUSD', name: 'Silver / US Dollar', type: 'FOREX', description: 'قیمت لحظه‌ای نقره به دلار آمریکا.' },
 ];
 
-// US Stocks List
-const US_STOCKS: AssetData[] = [
-  { id: 'st-bynd', symbol: 'NASDAQ:BYND', name: 'Beyond Meat', type: 'STOCKS' },
-  { id: 'st-rivn', symbol: 'NASDAQ:RIVN', name: 'Rivian', type: 'STOCKS' },
-  { id: 'st-plug', symbol: 'NASDAQ:PLUG', name: 'Plug Power', type: 'STOCKS' },
-  { id: 'st-riot', symbol: 'NASDAQ:RIOT', name: 'Riot Platforms', type: 'STOCKS' },
-  { id: 'st-trip', symbol: 'NASDAQ:TRIP', name: 'Tripadvisor', type: 'STOCKS' },
-  { id: 'st-coin', symbol: 'NASDAQ:COIN', name: 'Coinbase', type: 'STOCKS' },
-  { id: 'st-dbx', symbol: 'NASDAQ:DBX', name: 'Dropbox', type: 'STOCKS' },
-  { id: 'st-nvax', symbol: 'NASDAQ:NVAX', name: 'Novavax', type: 'STOCKS' },
-  { id: 'st-pep', symbol: 'NASDAQ:PEP', name: 'PepsiCo', type: 'STOCKS' },
-  { id: 'st-msft', symbol: 'NASDAQ:MSFT', name: 'Microsoft', type: 'STOCKS' },
-  { id: 'st-iq', symbol: 'NASDAQ:IQ', name: 'iQIYI', type: 'STOCKS' },
-  { id: 'st-wb', symbol: 'NASDAQ:WB', name: 'Weibo', type: 'STOCKS' },
-  { id: 'st-intc', symbol: 'NASDAQ:INTC', name: 'Intel', type: 'STOCKS' },
-  { id: 'st-docu', symbol: 'NASDAQ:DOCU', name: 'DocuSign', type: 'STOCKS' },
-  { id: 'st-rost', symbol: 'NASDAQ:ROST', name: 'Ross Stores', type: 'STOCKS' },
-  { id: 'st-wmt', symbol: 'NYSE:WMT', name: 'Walmart', type: 'STOCKS' },
-  { id: 'st-pdd', symbol: 'NASDAQ:PDD', name: 'PDD Holdings', type: 'STOCKS' },
-  { id: 'st-jd', symbol: 'NASDAQ:JD', name: 'JD.com', type: 'STOCKS' },
-  { id: 'st-mrna', symbol: 'NASDAQ:MRNA', name: 'Moderna', type: 'STOCKS' },
-  { id: 'st-qcom', symbol: 'NASDAQ:QCOM', name: 'Qualcomm', type: 'STOCKS' },
-  { id: 'st-li', symbol: 'NASDAQ:LI', name: 'Li Auto', type: 'STOCKS' },
-  { id: 'st-agnc', symbol: 'NASDAQ:AGNC', name: 'AGNC Investment', type: 'STOCKS' },
-  { id: 'st-dkng', symbol: 'NASDAQ:DKNG', name: 'DraftKings', type: 'STOCKS' },
-  { id: 'st-bkng', symbol: 'NASDAQ:BKNG', name: 'Booking Holdings', type: 'STOCKS' },
-  { id: 'st-tsla', symbol: 'NASDAQ:TSLA', name: 'Tesla', type: 'STOCKS' },
-  { id: 'st-expe', symbol: 'NASDAQ:EXPE', name: 'Expedia', type: 'STOCKS' },
-  { id: 'st-pypl', symbol: 'NASDAQ:PYPL', name: 'PayPal', type: 'STOCKS' },
-  { id: 'st-amzn', symbol: 'NASDAQ:AMZN', name: 'Amazon', type: 'STOCKS' },
-  { id: 'st-lcid', symbol: 'NASDAQ:LCID', name: 'Lucid Group', type: 'STOCKS' },
-  { id: 'st-amd', symbol: 'NASDAQ:AMD', name: 'AMD', type: 'STOCKS' },
-  { id: 'st-mdlz', symbol: 'NASDAQ:MDLZ', name: 'Mondelez', type: 'STOCKS' },
-  { id: 'st-amgn', symbol: 'NASDAQ:AMGN', name: 'Amgen', type: 'STOCKS' },
-  { id: 'st-cvac', symbol: 'NASDAQ:CVAC', name: 'CureVac', type: 'STOCKS' },
-  { id: 'st-nflx', symbol: 'NASDAQ:NFLX', name: 'Netflix', type: 'STOCKS' },
-  { id: 'st-goog', symbol: 'NASDAQ:GOOG', name: 'Alphabet', type: 'STOCKS' },
-  { id: 'st-meta', symbol: 'NASDAQ:META', name: 'Meta', type: 'STOCKS' },
-  { id: 'st-zm', symbol: 'NASDAQ:ZM', name: 'Zoom', type: 'STOCKS' },
-  { id: 'st-pool', symbol: 'NASDAQ:POOL', name: 'Pool Corp', type: 'STOCKS' },
-  { id: 'st-adbe', symbol: 'NASDAQ:ADBE', name: 'Adobe', type: 'STOCKS' },
-  { id: 'st-aal', symbol: 'NASDAQ:AAL', name: 'American Airlines', type: 'STOCKS' },
-  { id: 'st-lrcx', symbol: 'NASDAQ:LRCX', name: 'Lam Research', type: 'STOCKS' },
-  { id: 'st-avgo', symbol: 'NASDAQ:AVGO', name: 'Broadcom', type: 'STOCKS' },
-  { id: 'st-bidu', symbol: 'NASDAQ:BIDU', name: 'Baidu', type: 'STOCKS' },
-  { id: 'st-panw', symbol: 'NASDAQ:PANW', name: 'Palo Alto', type: 'STOCKS' },
-  { id: 'st-csco', symbol: 'NASDAQ:CSCO', name: 'Cisco', type: 'STOCKS' },
-  { id: 'st-intu', symbol: 'NASDAQ:INTU', name: 'Intuit', type: 'STOCKS' },
-  { id: 'st-gild', symbol: 'NASDAQ:GILD', name: 'Gilead', type: 'STOCKS' },
-  { id: 'st-sbux', symbol: 'NASDAQ:SBUX', name: 'Starbucks', type: 'STOCKS' },
-  { id: 'st-nvda', symbol: 'NASDAQ:NVDA', name: 'NVIDIA', type: 'STOCKS' },
-  { id: 'st-cost', symbol: 'NASDAQ:COST', name: 'Costco', type: 'STOCKS' },
-  { id: 'st-okta', symbol: 'NASDAQ:OKTA', name: 'Okta', type: 'STOCKS' },
-  { id: 'st-amat', symbol: 'NASDAQ:AMAT', name: 'Applied Materials', type: 'STOCKS' },
-  { id: 'st-cme', symbol: 'NASDAQ:CME', name: 'CME Group', type: 'STOCKS' },
-  { id: 'st-aapl', symbol: 'NASDAQ:AAPL', name: 'Apple', type: 'STOCKS' },
-  { id: 'st-adp', symbol: 'NASDAQ:ADP', name: 'ADP', type: 'STOCKS' },
-  { id: 'st-ebay', symbol: 'NASDAQ:EBAY', name: 'eBay', type: 'STOCKS' },
-  { id: 'st-ea', symbol: 'NASDAQ:EA', name: 'Electronic Arts', type: 'STOCKS' },
+const STOCK_DATA: AssetData[] = [
+  { id: 'st-bynd', symbol: 'NASDAQ:BYND', name: 'Beyond Meat', type: 'STOCKS', description: 'تولیدکننده جایگزین‌های گیاهی گوشت مستقر در لس‌آنجلس.' },
+  { id: 'st-rivn', symbol: 'NASDAQ:RIVN', name: 'Rivian Automotive', type: 'STOCKS', description: 'شرکت فناوری خودروسازی آمریکایی که بر تولید خودروهای برقی متمرکز است.' },
+  { id: 'st-plug', symbol: 'NASDAQ:PLUG', name: 'Plug Power', type: 'STOCKS', description: 'توسعه‌دهنده سیستم‌های سلول سوختی هیدروژنی جایگزین باتری‌های سنتی.' },
+  { id: 'st-riot', symbol: 'NASDAQ:RIOT', name: 'Riot Platforms', type: 'STOCKS', description: 'یکی از بزرگترین شرکت‌های استخراج بیت‌کوین و زیرساخت دیجیتال در آمریکا.' },
+  { id: 'st-coin', symbol: 'NASDAQ:COIN', name: 'Coinbase Global', type: 'STOCKS', description: 'پلتفرم مبادله ارزهای دیجیتال و کیف پول آنلاین.' },
+  { id: 'st-nvda', symbol: 'NASDAQ:NVDA', name: 'NVIDIA', type: 'STOCKS', description: 'پیشرو در تولید واحدهای پردازش گرافیکی (GPU) و هوش مصنوعی.' },
+  { id: 'st-tsla', symbol: 'NASDAQ:TSLA', name: 'Tesla', type: 'STOCKS', description: 'تولیدکننده خودروهای برقی، پنل‌های خورشیدی و راه‌حل‌های انرژی پاک.' },
+  { id: 'st-aapl', symbol: 'NASDAQ:AAPL', name: 'Apple', type: 'STOCKS', description: 'بزرگترین شرکت فناوری جهان، سازنده آیفون، مک و سرویس‌های دیجیتال.' },
+  { id: 'st-msft', symbol: 'NASDAQ:MSFT', name: 'Microsoft', type: 'STOCKS', description: 'غول نرم‌افزاری جهان، مالک ویندوز، آفیس، آژور و لینکدین.' },
+  { id: 'st-amzn', symbol: 'NASDAQ:AMZN', name: 'Amazon', type: 'STOCKS', description: 'بزرگترین شرکت تجارت الکترونیک و ارائه دهنده خدمات ابری (AWS) در جهان.' },
+  { id: 'st-goog', symbol: 'NASDAQ:GOOG', name: 'Alphabet (Google)', type: 'STOCKS', description: 'مالک موتور جستجوی گوگل، یوتیوب و سیستم عامل اندروید.' },
+  { id: 'st-meta', symbol: 'NASDAQ:META', name: 'Meta Platforms', type: 'STOCKS', description: 'مالک فیس‌بوک، اینستاگرام و واتس‌اپ، پیشرو در حوزه واقعیت مجازی.' },
+  { id: 'st-amd', symbol: 'NASDAQ:AMD', name: 'AMD', type: 'STOCKS', description: 'تولیدکننده پردازنده‌های کامپیوتری و گرافیکی برای دیتاسنترها و گیمینگ.' },
+  { id: 'st-nflx', symbol: 'NASDAQ:NFLX', name: 'Netflix', type: 'STOCKS', description: 'ارائه‌دهنده پیشرو خدمات پخش آنلاین فیلم و سریال در جهان.' },
+  { id: 'st-pep', symbol: 'NASDAQ:PEP', name: 'PepsiCo', type: 'STOCKS', description: 'شرکت چندملیتی تولید مواد غذایی، اسنک و نوشیدنی.' },
+  { id: 'st-cost', symbol: 'NASDAQ:COST', name: 'Costco Wholesale', type: 'STOCKS', description: 'زنجیره فروشگاه‌های عضویت محور با قیمت عمده‌فروشی.' },
+  { id: 'st-avgo', symbol: 'NASDAQ:AVGO', name: 'Broadcom', type: 'STOCKS', description: 'طراح و تولیدکننده جهانی نیمه‌هادی‌ها و نرم‌افزارهای زیرساختی.' },
+  { id: 'st-intc', symbol: 'NASDAQ:INTC', name: 'Intel', type: 'STOCKS', description: 'یکی از بزرگترین تولیدکنندگان چیپ‌های نیمه‌هادی در جهان.' },
+  { id: 'st-pypl', symbol: 'NASDAQ:PYPL', name: 'PayPal', type: 'STOCKS', description: 'سیستم پرداخت آنلاین بین‌المللی برای انتقال وجه الکترونیکی.' },
+  { id: 'st-jpm', symbol: 'NYSE:JPM', name: 'JPMorgan Chase', type: 'STOCKS', description: 'بزرگترین بانک ایالات متحده و یکی از بزرگترین موسسات مالی جهان.' },
+  { id: 'st-bac', symbol: 'NYSE:BAC', name: 'Bank of America', type: 'STOCKS', description: 'شرکت خدمات مالی و بانکداری چندملیتی آمریکایی.' },
+  { id: 'st-wmt', symbol: 'NYSE:WMT', name: 'Walmart', type: 'STOCKS', description: 'بزرگترین شرکت خرده‌فروشی جهان از نظر درآمد.' },
+  { id: 'st-lly', symbol: 'NYSE:LLY', name: 'Eli Lilly', type: 'STOCKS', description: 'شرکت داروسازی آمریکایی پیشرو در تولید داروهای دیابت و سرطان.' },
+  { id: 'st-pson', symbol: 'NYSE:PSO', name: 'Pearson', type: 'STOCKS', description: 'شرکت خدمات آموزشی و انتشاراتی بریتانیایی.' },
+  { id: 'st-hsba', symbol: 'NYSE:HSBC', name: 'HSBC Holdings', type: 'STOCKS', description: 'یکی از بزرگترین سازمان‌های بانکداری و خدمات مالی در جهان.' },
+  { id: 'st-blnd', symbol: 'OTC:BTLCY', name: 'British Land', type: 'STOCKS', description: 'شرکت سرمایه‌گذاری املاک و مستغلات بریتانیایی.' },
+  { id: 'st-rno', symbol: 'OTC:RNLSY', name: 'Renault', type: 'STOCKS', description: 'تولیدکننده خودرو فرانسوی چندملیتی.' },
+  { id: 'st-tsco', symbol: 'OTC:TSCDY', name: 'Tesco', type: 'STOCKS', description: 'شرکت خرده‌فروشی بریتانیایی و یکی از بزرگترین سوپرمارکت‌های جهان.' },
+  { id: 'st-brby', symbol: 'OTC:BURBY', name: 'Burberry Group', type: 'STOCKS', description: 'خانه مد لوکس بریتانیایی معروف به لباس‌های خاص و اکسسوری.' },
+  { id: 'st-vod', symbol: 'NASDAQ:VOD', name: 'Vodafone Group', type: 'STOCKS', description: 'شرکت مخابراتی چندملیتی بریتانیایی.' },
+  { id: 'st-bmw', symbol: 'OTC:BMWYY', name: 'BMW', type: 'STOCKS', description: 'شرکت خودروسازی آلمانی تولیدکننده خودروهای لوکس و موتورسیکلت.' },
+  { id: 'st-sie', symbol: 'OTC:SIEGY', name: 'Siemens', type: 'STOCKS', description: 'خوشه صنعتی آلمانی متمرکز بر اتوماسیون و دیجیتالی‌سازی.' },
+  { id: 'st-ads', symbol: 'OTC:ADDYY', name: 'Adidas', type: 'STOCKS', description: 'دومین تولیدکننده بزرگ لباس ورزشی در جهان مستقر در آلمان.' },
+  { id: 'st-asml', symbol: 'NASDAQ:ASML', name: 'ASML Holding', type: 'STOCKS', description: 'تولیدکننده هلندی سیستم‌های لیتوگرافی برای صنعت نیمه‌هادی.' },
+  { id: 'st-air', symbol: 'OTC:EADSY', name: 'Airbus', type: 'STOCKS', description: 'شرکت هوافضای اروپایی و تولیدکننده هواپیماهای مسافربری.' },
+  { id: 'st-mc', symbol: 'OTC:LVMUY', name: 'LVMH', type: 'STOCKS', description: 'بزرگترین شرکت کالاهای لوکس جهان (لویی ویتون، دیور و ...).' },
+  { id: 'st-tte', symbol: 'NYSE:TTE', name: 'TotalEnergies', type: 'STOCKS', description: 'شرکت نفت و گاز چندملیتی فرانسوی.' },
+  { id: 'st-alv', symbol: 'OTC:ALIZY', name: 'Allianz', type: 'STOCKS', description: 'شرکت خدمات مالی و بیمه چندملیتی آلمانی.' },
+  { id: 'st-barc', symbol: 'NYSE:BCS', name: 'Barclays', type: 'STOCKS', description: 'بانک جهانی بریتانیایی.' },
+  { id: 'st-baba', symbol: 'NYSE:BABA', name: 'Alibaba Group', type: 'STOCKS', description: 'غول تجارت الکترونیک و فناوری چینی.' },
+  { id: 'st-nio', symbol: 'NYSE:NIO', name: 'NIO Inc.', type: 'STOCKS', description: 'تولیدکننده خودروهای برقی هوشمند چین.' },
 ];
 
 const TIMEFRAMES = [
@@ -130,11 +95,9 @@ const TIMEFRAMES = [
   { label: '1M', value: '1M' },
 ];
 
-const FETCH_LIMIT_OPTIONS = [100, 500, 1000, 1500, 2000, 5000];
 const PAGE_SIZE_OPTIONS = [15, 30, 45, 60, 90];
 
 const LOCAL_STORAGE_KEY = 'crypto_layout_preference_v1';
-const DATA_CACHE_PREFIX = 'crypto_data_cache_v3_'; 
 
 // Lazy Load Wrapper
 const LazyWidget = ({ children }: { children?: React.ReactNode }) => {
@@ -153,7 +116,7 @@ const LazyWidget = ({ children }: { children?: React.ReactNode }) => {
               setIsLoaded(true);
               setIsWaiting(false);
               observer.disconnect();
-            }, 1000);
+            }, 300); 
           }
         } else {
           if (timerRef.current) {
@@ -179,13 +142,13 @@ const LazyWidget = ({ children }: { children?: React.ReactNode }) => {
         <div className="w-full h-full flex flex-col items-center justify-center bg-gray-50 text-gray-400 text-sm rounded-lg border border-gray-100 transition-all duration-300">
           {isWaiting ? (
             <div className="flex flex-col items-center gap-3">
-              <div className="w-8 h-8 border-2 border-gray-200 border-t-blue-500 rounded-full animate-spin"></div>
-              <span className="text-sm text-blue-500 font-medium">لودینگ...</span>
+              <div className="w-6 h-6 border-2 border-gray-200 border-t-blue-500 rounded-full animate-spin"></div>
+              <span className="text-xs text-blue-500 font-medium">لودینگ...</span>
             </div>
           ) : (
             <div className="flex flex-col items-center gap-2 opacity-50">
-               <span className="text-2xl">📊</span>
-               <span className="text-sm">مکث کنید</span>
+               <span className="text-xl">📊</span>
+               <span className="text-xs">منتظر نمایش</span>
             </div>
           )}
         </div>
@@ -200,19 +163,16 @@ const App: React.FC = () => {
   const [isLogScale, setIsLogScale] = useState(true);
   const [interval, setInterval] = useState("1M");
   
-  // Assets
-  const [assets, setAssets] = useState<AssetData[]>([]);
+  // Data State
+  const [displayedAssets, setDisplayedAssets] = useState<AssetData[]>([]);
   
   // User Preferences
   const [removedIds, setRemovedIds] = useState<Set<string>>(new Set());
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
   
-  // Fetch Config (Crypto only)
-  const [fetchLimit, setFetchLimit] = useState(1500); 
+  // Fetch Config
   const [loading, setLoading] = useState(false);
-  const [loadingProgress, setLoadingProgress] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
-  const [retryTrigger, setRetryTrigger] = useState(0);
   
   // UI Filters
   const [user, setUser] = useState<any>(null);
@@ -222,6 +182,7 @@ const App: React.FC = () => {
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(15);
+  const [cryptoTotalCount, setCryptoTotalCount] = useState(10000); 
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mainContentRef = useRef<HTMLDivElement>(null);
@@ -275,12 +236,12 @@ const App: React.FC = () => {
     return () => unsubscribeAuth();
   }, []);
 
-  // Reset pagination on filter change
+  // Reset pagination on category change or search
   useEffect(() => {
     setCurrentPage(1);
-  }, [fetchLimit, showFavoritesOnly, searchQuery, assets.length, activeCategory]);
+  }, [activeCategory, searchQuery, showFavoritesOnly]);
 
-  // Scroll top
+  // Scroll top on page change
   useEffect(() => {
     if (mainContentRef.current) {
         mainContentRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -289,157 +250,121 @@ const App: React.FC = () => {
     }
   }, [currentPage]);
 
-  // --- Data Fetching ---
-  const fetchWithRetry = async (url: string, retries = 3, baseBackoff = 2000, signal?: AbortSignal): Promise<any> => {
-    for (let i = 0; i < retries; i++) {
-      try {
-        if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
-        const response = await fetch(url, { headers: { 'Accept': 'application/json' }, mode: 'cors', signal });
-        
-        if (response.ok) return await response.json();
-        if (response.status === 429) {
-            await new Promise(r => setTimeout(r, baseBackoff * Math.pow(2, i + 1)));
-            continue;
-        }
-        if (response.status >= 500) {
-             await new Promise(r => setTimeout(r, baseBackoff * Math.pow(2, i)));
-             continue;
-        }
-        throw new Error(`HTTP Error: ${response.status}`);
-      } catch (err: any) {
-        if (err.name === 'AbortError' || signal?.aborted) throw err;
-        const isNetworkError = err.message === 'Failed to fetch';
-        if (i === retries - 1) throw err;
-        await new Promise(r => setTimeout(r, isNetworkError ? 5000 : baseBackoff * Math.pow(2, i)));
-      }
-    }
-  };
 
-  const minifyAndCacheData = (key: string, data: AssetData[]) => {
-      try {
-          const minified = data.map(coin => ({
-             ...coin
-          }));
-          localStorage.setItem(key, JSON.stringify({ timestamp: Date.now(), data: minified }));
-      } catch (e) { console.warn("Quota Exceeded"); }
-  };
-
+  // --- Data Fetching Strategy ---
   useEffect(() => {
-    // 1. Handle non-crypto categories (Instant load)
+    // 1. Non-Crypto Handling (Static Data)
     if (activeCategory === 'FOREX') {
-        setAssets(FOREX_PAIRS);
-        setLoading(false);
-        setError(null);
+        let data = FOREX_PAIRS.filter(a => !removedIds.has(a.id));
+        if (showFavoritesOnly) data = data.filter(a => favorites.has(a.id));
+        if (searchQuery) {
+             const q = searchQuery.toLowerCase();
+             data = data.filter(a => a.symbol.toLowerCase().includes(q) || a.name.toLowerCase().includes(q));
+        }
+        setDisplayedAssets(data);
+        setCryptoTotalCount(data.length);
         return;
     }
     if (activeCategory === 'STOCKS') {
-        setAssets(US_STOCKS);
-        setLoading(false);
-        setError(null);
+        let data = STOCK_DATA.filter(a => !removedIds.has(a.id));
+        if (showFavoritesOnly) data = data.filter(a => favorites.has(a.id));
+        if (searchQuery) {
+             const q = searchQuery.toLowerCase();
+             data = data.filter(a => a.symbol.toLowerCase().includes(q) || a.name.toLowerCase().includes(q));
+        }
+        setDisplayedAssets(data);
+        setCryptoTotalCount(data.length);
         return;
     }
 
-    // 2. Handle Crypto Fetching
+    // 2. Crypto Handling (API Pagination / Search)
     const controller = new AbortController();
-    const fetchCoins = async () => {
-      setError(null);
-      setLoadingProgress('');
-      const cacheKey = `${DATA_CACHE_PREFIX}${fetchLimit}`;
-      let usedCache = false;
 
-      // Try Cache
-      try {
-          const stored = localStorage.getItem(cacheKey);
-          if (stored) {
-              const { timestamp, data } = JSON.parse(stored);
-              if (Array.isArray(data) && data.length > 0) {
-                  setAssets(data as AssetData[]);
-                  usedCache = true;
-                  setLoading(false);
-                  if (Date.now() - timestamp < 300 * 1000) return;
-              }
-          }
-      } catch (e) {}
-
-      if (!usedCache) setLoading(true);
-
-      try {
-        const BATCH_SIZE = 250;
-        const batchesNeeded = Math.ceil(fetchLimit / BATCH_SIZE);
-        const accumulatedCoins: AssetData[] = [];
-        
-        for (let i = 1; i <= batchesNeeded; i++) {
-            if (controller.signal.aborted) break;
-            if (!usedCache) setLoadingProgress(`در حال دریافت بخش ${i} از ${batchesNeeded}...`);
-
-            try {
-                const batchData = await fetchWithRetry(
-                    `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${BATCH_SIZE}&page=${i}&sparkline=false&price_change_percentage=24h,7d,30d,1y`,
-                    3, 2000, controller.signal
-                );
-                
-                if (batchData && Array.isArray(batchData)) {
-                    const mapped: AssetData[] = batchData.map((c: any) => ({
-                        ...c,
-                        type: 'CRYPTO'
-                    }));
-                    accumulatedCoins.push(...mapped);
+    const fetchData = async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            let data: AssetData[] = [];
+            
+            // CASE A: Show Favorites Only
+            if (showFavoritesOnly) {
+                const favIds = Array.from(favorites);
+                if (favIds.length === 0) {
+                    setDisplayedAssets([]);
+                    setCryptoTotalCount(0);
+                    setLoading(false);
+                    return;
                 }
-            } catch (batchError) {
-                if (accumulatedCoins.length > 0) break;
-                else throw batchError;
+                
+                const idsParam = favIds.join(',');
+                const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${idsParam}&order=market_cap_desc&sparkline=false&price_change_percentage=24h,7d,30d,1y`;
+                const res = await fetch(url, { signal: controller.signal });
+                const json = await res.json();
+                
+                let filtered = json;
+                if (searchQuery) {
+                    const q = searchQuery.toLowerCase();
+                    filtered = filtered.filter((c: any) => c.symbol.toLowerCase().includes(q) || c.name.toLowerCase().includes(q));
+                }
+                
+                setCryptoTotalCount(filtered.length);
+                const start = (currentPage - 1) * pageSize;
+                data = filtered.slice(start, start + pageSize).map((c: any) => ({ ...c, type: 'CRYPTO' }));
+            
+            // CASE B: Search Active (Server-side Search)
+            } else if (searchQuery.trim().length > 0) {
+                const searchRes = await fetch(`https://api.coingecko.com/api/v3/search?query=${searchQuery}`, { signal: controller.signal });
+                const searchJson = await searchRes.json();
+                const coins = searchJson.coins || [];
+                
+                if (coins.length === 0) {
+                    setDisplayedAssets([]);
+                    setCryptoTotalCount(0);
+                    setLoading(false);
+                    return;
+                }
+
+                setCryptoTotalCount(coins.length);
+
+                const start = (currentPage - 1) * pageSize;
+                const pageCoins = coins.slice(start, start + pageSize);
+                const ids = pageCoins.map((c: any) => c.id).join(',');
+                
+                if (ids) {
+                    const marketsRes = await fetch(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids}&order=market_cap_desc&sparkline=false&price_change_percentage=24h,7d,30d,1y`, { signal: controller.signal });
+                    const marketsJson = await marketsRes.json();
+                    data = marketsJson.map((c: any) => ({ ...c, type: 'CRYPTO' }));
+                }
+
+            // CASE C: Default Market View (Paginated)
+            } else {
+                const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${pageSize}&page=${currentPage}&sparkline=false&price_change_percentage=24h,7d,30d,1y`;
+                const res = await fetch(url, { signal: controller.signal });
+                if (!res.ok) throw new Error("Rate Limit or API Error");
+                const json = await res.json();
+                
+                data = json.map((c: any) => ({ ...c, type: 'CRYPTO' }));
+                setCryptoTotalCount(10000); 
             }
-            if (i < batchesNeeded) await new Promise(r => setTimeout(r, 1200)); 
-        }
 
-        if (!controller.signal.aborted) {
-            const filteredData = accumulatedCoins.filter((coin) => 
-                !STABLE_COINS.includes(coin.symbol.toLowerCase()) && 
-                !STABLE_COINS.includes(coin.id.toLowerCase())
-            );
+            setDisplayedAssets(data.filter(a => !removedIds.has(a.id)));
 
-            if (filteredData.length > 0) {
-                setAssets(filteredData);
-                minifyAndCacheData(cacheKey, filteredData);
-            } else throw new Error("No data received");
+        } catch (err: any) {
+            if (err.name !== 'AbortError') {
+                console.error(err);
+                setError("خطا در برقراری ارتباط با سرور.");
+            }
+        } finally {
+            if (!controller.signal.aborted) setLoading(false);
         }
-      } catch (err: any) {
-        if (err.name !== 'AbortError' && !usedCache) setError("خطا در برقراری ارتباط. لطفاً دوباره تلاش کنید.");
-      } finally {
-        if (!controller.signal.aborted) {
-            setLoading(false);
-            setLoadingProgress('');
-        }
-      }
     };
-    fetchCoins();
-    return () => controller.abort();
-  }, [activeCategory, fetchLimit, retryTrigger]);
 
-  // --- Filtering & Pagination ---
-  const { paginatedAssets, totalPages, totalCount } = useMemo(() => {
-    let result = assets.filter((a) => !removedIds.has(a.id));
-
-    if (showFavoritesOnly) {
-        result = result.filter(a => favorites.has(a.id));
-    }
-
-    if (searchQuery.trim()) {
-        const query = searchQuery.toLowerCase();
-        result = result.filter(a => 
-            a.symbol.toLowerCase().includes(query) || 
-            a.name.toLowerCase().includes(query)
-        );
-    }
-
-    const totalCount = result.length;
-    const totalPages = Math.ceil(totalCount / pageSize);
-
-    const startIndex = (currentPage - 1) * pageSize;
-    const paginatedAssets = result.slice(startIndex, startIndex + pageSize);
-    
-    return { paginatedAssets, totalPages, totalCount };
-  }, [assets, removedIds, favorites, showFavoritesOnly, searchQuery, currentPage, pageSize]);
+    const debounceTimer = setTimeout(fetchData, 400); 
+    return () => {
+        clearTimeout(debounceTimer);
+        controller.abort();
+    };
+  }, [activeCategory, currentPage, pageSize, searchQuery, showFavoritesOnly]); 
 
   // --- Helpers ---
   const formatCurrency = (value?: number) => {
@@ -462,7 +387,6 @@ const App: React.FC = () => {
         if (asset.symbol.toLowerCase() === 'usdt') return 'USDCUSDT';
         return `${asset.symbol.toUpperCase()}USDT`;
     }
-    // For Stocks and Forex, we usually rely on the symbol provided in the list (e.g., NASDAQ:AAPL or EURUSD)
     return asset.symbol;
   };
 
@@ -495,6 +419,7 @@ const App: React.FC = () => {
       }
       return newSet;
     });
+    setDisplayedAssets(prev => prev.filter(a => a.id !== id));
   };
 
   const toggleFavorite = (id: string) => {
@@ -556,6 +481,9 @@ const App: React.FC = () => {
       return '';
   };
 
+  // Helper variables
+  const totalPages = Math.ceil(cryptoTotalCount / pageSize);
+
   return (
     <div className="min-h-screen flex flex-col font-sans bg-gray-50">
       {/* Header */}
@@ -574,21 +502,21 @@ const App: React.FC = () => {
               <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg">
                 <button 
                   onClick={() => setActiveCategory('CRYPTO')} 
-                  className={`px-4 py-1.5 rounded-md text-sm font-semibold transition-all ${activeCategory === 'CRYPTO' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                  className={`px-3 py-1.5 rounded-md text-sm font-semibold transition-all ${activeCategory === 'CRYPTO' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                 >
                   کریپتو
                 </button>
                 <button 
                   onClick={() => setActiveCategory('FOREX')} 
-                  className={`px-4 py-1.5 rounded-md text-sm font-semibold transition-all ${activeCategory === 'FOREX' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                  className={`px-3 py-1.5 rounded-md text-sm font-semibold transition-all ${activeCategory === 'FOREX' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                 >
                   فارکس
                 </button>
                 <button 
                   onClick={() => setActiveCategory('STOCKS')} 
-                  className={`px-4 py-1.5 rounded-md text-sm font-semibold transition-all ${activeCategory === 'STOCKS' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                  className={`px-3 py-1.5 rounded-md text-sm font-semibold transition-all ${activeCategory === 'STOCKS' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                 >
-                  بورس آمریکا
+                  بازار سهام
                 </button>
               </div>
               
@@ -596,7 +524,7 @@ const App: React.FC = () => {
               <div className="relative w-full md:w-56">
                 <input 
                     type="text" 
-                    placeholder="جستجو..." 
+                    placeholder="جستجو (نام یا نماد)..." 
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
@@ -624,22 +552,6 @@ const App: React.FC = () => {
 
               <div className="h-6 w-px bg-gray-300 hidden md:block" />
               
-              {/* Fetch Limit Selector (Only relevant for Crypto) */}
-              {activeCategory === 'CRYPTO' && (
-                <div className="flex items-center gap-1 bg-gray-50 px-2 py-1 rounded-lg border border-gray-200">
-                   <span className="text-xs text-gray-500 uppercase">دانلود:</span>
-                   <select 
-                      value={fetchLimit} 
-                      onChange={(e) => setFetchLimit(Number(e.target.value))}
-                      className="bg-transparent text-sm font-semibold outline-none text-gray-700"
-                    >
-                      {FETCH_LIMIT_OPTIONS.map(opt => (
-                        <option key={opt} value={opt}>{opt}</option>
-                      ))}
-                    </select>
-                </div>
-              )}
-
               {/* View Per Page Selector */}
               <div className="flex items-center gap-1 bg-gray-50 px-2 py-1 rounded-lg border border-gray-200">
                  <span className="text-xs text-gray-500 uppercase">صفحه:</span>
@@ -679,15 +591,18 @@ const App: React.FC = () => {
                 <button className="px-3 py-2 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 text-sm">
                   ⚙️
                 </button>
-                <div className="absolute left-0 mt-2 w-48 bg-white rounded-lg shadow-xl border border-gray-100 hidden group-hover:block p-2 z-50">
-                  <button onClick={handleSaveLayout} className="w-full text-right px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded">ذخیره چیدمان</button>
-                  <button onClick={handleResetLayout} className="w-full text-right px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded">بازنشانی</button>
-                  <hr className="my-1" />
-                  <button onClick={handleExportBackup} className="w-full text-right px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded">بکاپ</button>
-                  <label className="block w-full text-right px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded cursor-pointer">
-                    ریستور
-                    <input type="file" className="hidden" ref={fileInputRef} onChange={handleImportBackup} accept=".json" />
-                  </label>
+                {/* Changed this block: Added wrapper with padding (bridge) instead of margin */}
+                <div className="absolute left-0 top-full pt-2 w-48 hidden group-hover:block z-50">
+                  <div className="bg-white rounded-lg shadow-xl border border-gray-100 p-2">
+                    <button onClick={handleSaveLayout} className="w-full text-right px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded">ذخیره چیدمان</button>
+                    <button onClick={handleResetLayout} className="w-full text-right px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded">بازنشانی</button>
+                    <hr className="my-1" />
+                    <button onClick={handleExportBackup} className="w-full text-right px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded">بکاپ</button>
+                    <label className="block w-full text-right px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded cursor-pointer">
+                      ریستور
+                      <input type="file" className="hidden" ref={fileInputRef} onChange={handleImportBackup} accept=".json" />
+                    </label>
+                  </div>
                 </div>
               </div>
             </div>
@@ -697,27 +612,21 @@ const App: React.FC = () => {
 
       {/* Main Content */}
       <main ref={mainContentRef} className="flex-grow p-4 md:p-6 bg-gray-100">
-        {loading ? (
-            <div className="flex flex-col items-center justify-center h-96">
-                <div className="w-16 h-16 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mb-4"></div>
-                <p className="text-gray-800 font-medium animate-pulse mb-2">در حال دریافت اطلاعات...</p>
-                {loadingProgress && (
-                    <p className="text-blue-600 text-sm font-medium bg-blue-50 px-3 py-1 rounded-full">{loadingProgress}</p>
-                )}
+        
+        {/* Loading/Error States */}
+        {loading && (
+            <div className="fixed top-[70px] left-1/2 -translate-x-1/2 z-30 bg-blue-600 text-white px-4 py-1.5 rounded-full shadow-lg text-sm font-medium flex items-center gap-2 animate-pulse">
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                بروزرسانی لیست...
             </div>
-        ) : error ? (
-            <div className="flex flex-col items-center justify-center h-96 text-center">
-                <div className="text-red-500 text-5xl mb-4">⚠️</div>
-                <p className="text-gray-800 font-medium text-lg mb-2">خطا در دریافت</p>
-                <p className="text-gray-500 mb-6 max-w-md">{error}</p>
-                <button 
-                    onClick={() => setRetryTrigger(prev => prev + 1)}
-                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all shadow-lg hover:shadow-xl"
-                >
-                    تلاش مجدد
-                </button>
+        )}
+        {error && (
+            <div className="fixed top-[70px] left-1/2 -translate-x-1/2 z-30 bg-red-600 text-white px-4 py-1.5 rounded-full shadow-lg text-sm font-medium">
+                {error}
             </div>
-        ) : totalCount === 0 ? (
+        )}
+
+        {(!loading && displayedAssets.length === 0) ? (
             <div className="flex flex-col items-center justify-center h-96 text-center">
                 <p className="text-gray-500 text-lg">موردی یافت نشد.</p>
                 {searchQuery && <p className="text-gray-400 mt-2">برای "{searchQuery}" نتیجه‌ای پیدا نشد.</p>}
@@ -725,7 +634,7 @@ const App: React.FC = () => {
         ) : (
             <>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {paginatedAssets.map((asset) => {
+                  {displayedAssets.map((asset) => {
                       const hasDetails = asset.type === 'CRYPTO';
                       // Calculate "To ATH" percentage if applicable
                       const toAth = asset.ath && asset.current_price ? ((asset.ath - asset.current_price) / asset.current_price) * 100 : 0;
@@ -739,22 +648,23 @@ const App: React.FC = () => {
                     >
                       {/* 1. Header */}
                       <div className="px-3 py-2 border-b border-gray-100 flex justify-between items-center bg-white shrink-0">
-                        <div className="flex items-center gap-2">
-                          <img src={getImage(asset)} alt={asset.name} className="w-8 h-8 rounded-full object-contain" loading="lazy" />
-                          <div>
+                        <div className="flex items-center gap-2 overflow-hidden">
+                          <img src={getImage(asset)} alt={asset.name} className="w-8 h-8 rounded-full object-contain flex-shrink-0" loading="lazy" onError={(e) => (e.currentTarget.style.display = 'none')} />
+                          <div className="min-w-0">
                             <div className="flex items-center gap-1.5">
-                               <h3 className="font-bold text-gray-800 text-lg">{asset.symbol.split(':').pop()?.toUpperCase()}</h3>
+                               <h3 className="font-bold text-gray-800 text-lg truncate">{asset.symbol.split(':').pop()?.toUpperCase()}</h3>
                                {hasDetails && (
-                                 <span className="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded font-medium">#{asset.market_cap_rank}</span>
+                                 <span className="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded font-medium flex-shrink-0">#{asset.market_cap_rank || '-'}</span>
                                )}
                                {!hasDetails && (
-                                 <span className="text-[10px] text-gray-400 bg-gray-50 px-1 py-0.5 rounded uppercase">{asset.type}</span>
+                                 <span className="text-[10px] text-gray-400 bg-gray-50 px-1 py-0.5 rounded uppercase flex-shrink-0">{asset.type}</span>
                                )}
                             </div>
+                            <p className="text-xs text-gray-500 truncate max-w-[150px]">{asset.name}</p>
                           </div>
                         </div>
                         
-                        <div className="flex items-center">
+                        <div className="flex items-center flex-shrink-0">
                           <button 
                             onClick={() => toggleFavorite(asset.id)}
                             className={`p-1.5 rounded-lg hover:bg-gray-100 transition-colors ${favorites.has(asset.id) ? 'text-yellow-400' : 'text-gray-300'}`}
@@ -776,9 +686,9 @@ const App: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* 2. Primary Stats (Price & 24h) - Only if details available */}
+                      {/* 2. Primary Stats */}
                       {hasDetails && (
-                          <div className="px-4 py-2 bg-gray-50 flex justify-between items-center border-b border-gray-100 shrink-0">
+                          <div className="px-4 py-2 bg-gray-50 flex justify-between items-center border-b border-gray-100 shrink-0 h-[45px]">
                              <div className="flex items-center gap-1">
                                 <span className="text-gray-800 font-bold text-xl">{formatCurrency(asset.current_price)}</span>
                              </div>
@@ -790,9 +700,9 @@ const App: React.FC = () => {
                           </div>
                       )}
 
-                      {/* 3. Detailed Stats Grid - Only if details available */}
-                      {hasDetails && (
-                          <div className="grid grid-cols-3 gap-x-2 gap-y-1 p-3 text-xs bg-white border-b border-gray-100 text-gray-600 shrink-0">
+                      {/* 3. Detailed Stats */}
+                      {hasDetails ? (
+                          <div className="grid grid-cols-3 gap-x-2 gap-y-1 p-3 text-xs bg-white border-b border-gray-100 text-gray-600 shrink-0 h-[85px]">
                               {/* Column 1: Historical Changes */}
                               <div className="flex flex-col gap-1">
                                   <div className="flex justify-between">
@@ -841,6 +751,13 @@ const App: React.FC = () => {
                                   </div>
                               </div>
                           </div>
+                      ) : (
+                          // Description for non-crypto assets
+                          <div className="px-4 py-3 bg-white border-b border-gray-100 shrink-0 h-[80px] overflow-hidden">
+                              <p className="text-xs text-gray-500 leading-relaxed text-right line-clamp-3">
+                                  {asset.description || 'اطلاعات بیشتری در دسترس نیست.'}
+                              </p>
+                          </div>
                       )}
 
                       {/* 4. Chart */}
@@ -860,7 +777,7 @@ const App: React.FC = () => {
                 {/* Pagination Controls */}
                 <div className="mt-8 flex flex-col items-center gap-4">
                     <span className="text-sm text-gray-500">
-                        نمایش {((currentPage - 1) * pageSize) + 1} تا {Math.min(currentPage * pageSize, totalCount)} از {totalCount} مورد
+                        نمایش {((currentPage - 1) * pageSize) + 1} تا {Math.min(currentPage * pageSize, cryptoTotalCount)} از {cryptoTotalCount} مورد
                     </span>
                     <div className="flex items-center gap-2 bg-white p-2 rounded-lg shadow-sm border border-gray-200">
                         <button 
@@ -879,22 +796,15 @@ const App: React.FC = () => {
                         </button>
                         
                         <div className="px-4 py-1.5 text-sm font-semibold text-blue-600 bg-blue-50 rounded">
-                            صفحه {currentPage} از {totalPages}
+                            صفحه {currentPage} از {totalPages || 1}
                         </div>
 
                         <button 
                             onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))} 
-                            disabled={currentPage === totalPages}
+                            disabled={currentPage >= totalPages}
                             className="px-3 py-1.5 text-sm rounded bg-gray-50 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed text-gray-600"
                         >
                             بعدی
-                        </button>
-                        <button 
-                            onClick={() => setCurrentPage(totalPages)} 
-                            disabled={currentPage === totalPages}
-                            className="px-3 py-1.5 text-sm rounded bg-gray-50 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed text-gray-600"
-                        >
-                            آخرین
                         </button>
                     </div>
                 </div>
