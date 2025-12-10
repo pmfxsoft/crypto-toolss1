@@ -56,6 +56,13 @@ const TradingViewWidget: React.FC<TradingViewWidgetProps> = ({ isLogScale, symbo
           "paneProperties.vertGridProperties.color": "#f8f9fa",
           "paneProperties.horzGridProperties.color": "#f8f9fa",
           "scalesProperties.textColor": "#333333",
+          // Custom Candle Colors (User Requested)
+          "mainSeriesProperties.candleStyle.upColor": "#8faad5", 
+          "mainSeriesProperties.candleStyle.downColor": "#636363", 
+          "mainSeriesProperties.candleStyle.borderUpColor": "#636363",
+          "mainSeriesProperties.candleStyle.borderDownColor": "#636363",
+          "mainSeriesProperties.candleStyle.wickUpColor": "#636363",
+          "mainSeriesProperties.candleStyle.wickDownColor": "#636363",
         }
       });
     }
