@@ -575,7 +575,7 @@ const App: React.FC = () => {
   
   // Smart Card Height Logic using viewport height (100vh) to avoid page scrolling for the card itself
   // Adjusts to fill the screen minus header and padding
-  const cardHeightClass = 'h-[calc(100vh-140px)] min-h-[450px]';
+  const cardHeightClass = 'h-[calc(100vh-140px)] min-h-[500px]';
 
   // Helper variables
   const totalPages = Math.ceil(cryptoTotalCount / pageSize);
@@ -782,15 +782,15 @@ const App: React.FC = () => {
                           <img src={getImage(asset)} alt={asset.name} className="w-8 h-8 rounded-full object-contain flex-shrink-0" loading="lazy" onError={(e) => (e.currentTarget.style.display = 'none')} />
                           <div className="min-w-0">
                             <div className="flex items-center gap-1.5">
-                               <h3 className="font-bold text-gray-800 text-lg truncate">{asset.symbol.split(':').pop()?.toUpperCase()}</h3>
+                               <h3 className="font-bold text-gray-800 text-xl truncate">{asset.symbol.split(':').pop()?.toUpperCase()}</h3>
                                {hasDetails && (
-                                 <span className="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded font-medium flex-shrink-0">#{asset.market_cap_rank || '-'}</span>
+                                 <span className="text-sm text-gray-500 bg-gray-100 px-2 py-0.5 rounded font-medium flex-shrink-0">#{asset.market_cap_rank || '-'}</span>
                                )}
                                {!hasDetails && (
-                                 <span className="text-[10px] text-gray-400 bg-gray-50 px-1 py-0.5 rounded uppercase flex-shrink-0">{asset.type}</span>
+                                 <span className="text-xs text-gray-400 bg-gray-50 px-1 py-0.5 rounded uppercase flex-shrink-0">{asset.type}</span>
                                )}
                             </div>
-                            <p className="text-xs text-gray-500 truncate max-w-[150px]">{asset.name}</p>
+                            <p className="text-sm text-gray-500 truncate max-w-[150px]">{asset.name}</p>
                           </div>
                         </div>
                         
@@ -818,12 +818,12 @@ const App: React.FC = () => {
 
                       {/* 2. Primary Stats */}
                       {hasDetails && (
-                          <div className="px-4 py-2 bg-gray-50 flex justify-between items-center border-b border-gray-100 shrink-0 h-[45px]">
+                          <div className="px-4 py-3 bg-gray-50 flex justify-between items-center border-b border-gray-100 shrink-0 h-[55px]">
                              <div className="flex items-center gap-1">
-                                <span className="text-gray-800 font-bold text-xl">{formatCurrency(asset.current_price)}</span>
+                                <span className="text-gray-800 font-bold text-2xl">{formatCurrency(asset.current_price)}</span>
                              </div>
                              <div className="flex items-center gap-1">
-                                <span className={`font-bold text-sm ${getPercentClass(asset.price_change_percentage_24h)} dir-ltr`}>
+                                <span className={`font-bold text-base ${getPercentClass(asset.price_change_percentage_24h)} dir-ltr`}>
                                     {fmtPct(asset.price_change_percentage_24h)} (24h)
                                 </span>
                              </div>
@@ -832,7 +832,7 @@ const App: React.FC = () => {
 
                       {/* 3. Detailed Stats */}
                       {hasDetails ? (
-                          <div className="grid grid-cols-3 gap-x-2 gap-y-1 p-3 text-xs bg-white border-b border-gray-100 text-gray-600 shrink-0 h-[85px]">
+                          <div className="grid grid-cols-3 gap-x-3 gap-y-2 p-3 text-sm bg-white border-b border-gray-100 text-gray-600 shrink-0 h-[115px]">
                               {/* Column 1: Historical Changes */}
                               <div className="flex flex-col gap-1">
                                   <div className="flex justify-between">
@@ -883,8 +883,8 @@ const App: React.FC = () => {
                           </div>
                       ) : (
                           // Description for non-crypto assets
-                          <div className="px-4 py-3 bg-white border-b border-gray-100 shrink-0 h-[80px] overflow-hidden">
-                              <p className="text-xs text-gray-500 leading-relaxed text-right line-clamp-3">
+                          <div className="px-4 py-3 bg-white border-b border-gray-100 shrink-0 h-[100px] overflow-hidden">
+                              <p className="text-sm text-gray-500 leading-relaxed text-right line-clamp-4">
                                   {asset.description || 'اطلاعات بیشتری در دسترس نیست.'}
                               </p>
                           </div>
