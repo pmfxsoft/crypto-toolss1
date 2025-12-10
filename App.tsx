@@ -790,7 +790,7 @@ const App: React.FC = () => {
                                  <span className="text-xs text-gray-400 bg-gray-50 px-1 py-0.5 rounded uppercase flex-shrink-0">{asset.type}</span>
                                )}
                             </div>
-                            <p className="text-sm text-gray-500 truncate max-w-[150px]">{asset.name}</p>
+                            <p className="text-sm font-bold text-gray-500 truncate max-w-[150px]">{asset.name}</p>
                           </div>
                         </div>
                         
@@ -836,48 +836,48 @@ const App: React.FC = () => {
                               {/* Column 1: Historical Changes */}
                               <div className="flex flex-col gap-1">
                                   <div className="flex justify-between">
-                                      <span>7d:</span>
-                                      <span className={getPercentClass(asset.price_change_percentage_7d_in_currency)}>{fmtPct(asset.price_change_percentage_7d_in_currency)}</span>
+                                      <span className="font-semibold text-gray-600">7d:</span>
+                                      <span className={`font-bold ${getPercentClass(asset.price_change_percentage_7d_in_currency)}`}>{fmtPct(asset.price_change_percentage_7d_in_currency)}</span>
                                   </div>
                                   <div className="flex justify-between">
-                                      <span>30d:</span>
-                                      <span className={getPercentClass(asset.price_change_percentage_30d_in_currency)}>{fmtPct(asset.price_change_percentage_30d_in_currency)}</span>
+                                      <span className="font-semibold text-gray-600">30d:</span>
+                                      <span className={`font-bold ${getPercentClass(asset.price_change_percentage_30d_in_currency)}`}>{fmtPct(asset.price_change_percentage_30d_in_currency)}</span>
                                   </div>
                                   <div className="flex justify-between">
-                                      <span>1y:</span>
-                                      <span className={getPercentClass(asset.price_change_percentage_1y_in_currency)}>{fmtPct(asset.price_change_percentage_1y_in_currency)}</span>
+                                      <span className="font-semibold text-gray-600">1y:</span>
+                                      <span className={`font-bold ${getPercentClass(asset.price_change_percentage_1y_in_currency)}`}>{fmtPct(asset.price_change_percentage_1y_in_currency)}</span>
                                   </div>
                               </div>
 
                               {/* Column 2: ATH Data */}
                               <div className="flex flex-col gap-1 border-l border-gray-100 pl-2">
                                   <div className="flex justify-between" title="All Time High Price">
-                                      <span>ATH:</span>
-                                      <span className="text-gray-700">{formatCompact(asset.ath)}</span>
+                                      <span className="font-semibold text-gray-600">ATH:</span>
+                                      <span className="font-bold text-gray-700">{formatCompact(asset.ath)}</span>
                                   </div>
                                   <div className="flex justify-between" title="Down from ATH">
-                                      <span>Drop:</span>
-                                      <span className="text-red-500">{fmtPct(asset.ath_change_percentage)}</span>
+                                      <span className="font-semibold text-gray-600">Drop:</span>
+                                      <span className="font-bold text-red-500">{fmtPct(asset.ath_change_percentage)}</span>
                                   </div>
                                   <div className="flex justify-between" title="Needed to reach ATH">
-                                      <span>To ATH:</span>
-                                      <span className="text-green-600 font-medium">+{toAth.toFixed(0)}%</span>
+                                      <span className="font-semibold text-gray-600">To ATH:</span>
+                                      <span className="font-bold text-green-600">+{toAth.toFixed(0)}%</span>
                                   </div>
                               </div>
 
                               {/* Column 3: Market Data */}
                               <div className="flex flex-col gap-1 border-l border-gray-100 pl-2">
                                    <div className="flex justify-between">
-                                      <span>Cap:</span>
-                                      <span className="text-gray-700">{formatCompact(asset.market_cap)}</span>
+                                      <span className="font-semibold text-gray-600">Cap:</span>
+                                      <span className="font-bold text-gray-700">{formatCompact(asset.market_cap)}</span>
                                   </div>
                                   <div className="flex justify-between">
-                                      <span>Vol:</span>
-                                      <span className="text-gray-700">{formatCompact(asset.total_volume)}</span>
+                                      <span className="font-semibold text-gray-600">Vol:</span>
+                                      <span className="font-bold text-gray-700">{formatCompact(asset.total_volume)}</span>
                                   </div>
                                   <div className="flex justify-between" title={`H: ${formatCurrency(asset.high_24h)} L: ${formatCurrency(asset.low_24h)}`}>
-                                      <span>H/L:</span>
-                                      <span className="text-gray-500">Info</span>
+                                      <span className="font-semibold text-gray-600">H/L:</span>
+                                      <span className="font-bold text-gray-500">Info</span>
                                   </div>
                               </div>
                           </div>
