@@ -209,11 +209,41 @@ const App: React.FC = () => {
   const [isLogScale, setIsLogScale] = useState(true);
   const [interval, setInterval] = useState("1M");
   
+  // Grid State
+  const [gridCols, setGridCols] = useState(() => {
+      if (typeof window !== 'undefined') {
+          const saved = localStorage.getItem('crypto_grid_cols_v1');
+          return saved ? Number(saved) : 3;
+      }
+      return 3;
+  });
+
+  useEffect(() => {
+      localStorage.setItem('crypto_grid_cols_v1', String(gridCols));
+      // Smart Auto Adjust: Trigger resize event when grid columns change 
+      // to ensure TradingView widgets adapt to the new container size.
+      const t1 = setTimeout(() => window.dispatchEvent(new Event('resize')), 50);
+      const t2 = setTimeout(() => window.dispatchEvent(new Event('resize')), 350); // After transition
+      return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [gridCols]);
+  
   // Data State
   const [displayedAssets, setDisplayedAssets] = useState<AssetData[]>([]);
   
   // User Preferences
-  const [removedIds, setRemovedIds] = useState<Set<string>>(new Set());
+  // FIX: Initialize removedIds from localStorage immediately to prevent flicker/reappearance of deleted items
+  const [removedIds, setRemovedIds] = useState<Set<string>>(() => {
+    if (typeof window !== 'undefined') {
+        const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
+        if (saved) {
+            try {
+                return new Set(JSON.parse(saved));
+            } catch (e) { return new Set(); }
+        }
+    }
+    return new Set();
+  });
+  
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
   
   // Fetch Config
@@ -235,21 +265,8 @@ const App: React.FC = () => {
 
   // --- Effects ---
 
-  // Load Preferences
+  // Load Preferences (Favorites only, RemovedIds is now lazy-loaded in useState)
   useEffect(() => {
-      const savedLayout = localStorage.getItem(LOCAL_STORAGE_KEY);
-      if (savedLayout) {
-          try {
-              const parsed = JSON.parse(savedLayout);
-              if (Array.isArray(parsed)) {
-                  setRemovedIds(prev => {
-                      const newSet = new Set(prev);
-                      parsed.forEach((id: string) => newSet.add(id));
-                      return newSet;
-                  });
-              }
-          } catch(e) {}
-      }
       const savedFavs = localStorage.getItem('crypto_favorites_v1');
       if (savedFavs) {
           try {
@@ -270,7 +287,12 @@ const App: React.FC = () => {
             if (docSnap.exists()) {
                 const data = docSnap.data();
                 if (data.removedCoinIds && Array.isArray(data.removedCoinIds)) {
-                    setRemovedIds(new Set(data.removedCoinIds));
+                    // Only update if remote has more data or to sync, but prioritize local for speed initially
+                    setRemovedIds(prev => {
+                        const newSet = new Set(prev);
+                        data.removedCoinIds.forEach((id: string) => newSet.add(id));
+                        return newSet;
+                    });
                 }
                 if (data.favorites && Array.isArray(data.favorites)) {
                     setFavorites(new Set(data.favorites));
@@ -357,40 +379,64 @@ const App: React.FC = () => {
                 const start = (currentPage - 1) * pageSize;
                 data = filtered.slice(start, start + pageSize).map((c: any) => ({ ...c, type: 'CRYPTO' }));
             
-            // CASE B: Search Active (Server-side Search)
-            } else if (searchQuery.trim().length > 0) {
-                const searchRes = await fetch(`https://api.coingecko.com/api/v3/search?query=${searchQuery}`, { signal: controller.signal });
-                const searchJson = await searchRes.json();
-                const coins = searchJson.coins || [];
-                
-                if (coins.length === 0) {
-                    setDisplayedAssets([]);
-                    setCryptoTotalCount(0);
-                    setLoading(false);
-                    return;
-                }
-
-                setCryptoTotalCount(coins.length);
-
-                const start = (currentPage - 1) * pageSize;
-                const pageCoins = coins.slice(start, start + pageSize);
-                const ids = pageCoins.map((c: any) => c.id).join(',');
-                
-                if (ids) {
-                    const marketsRes = await fetch(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids}&order=market_cap_desc&sparkline=false&price_change_percentage=24h,7d,30d,1y`, { signal: controller.signal });
-                    const marketsJson = await marketsRes.json();
-                    data = marketsJson.map((c: any) => ({ ...c, type: 'CRYPTO' }));
-                }
-
-            // CASE C: Default Market View (Paginated)
             } else {
-                const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${pageSize}&page=${currentPage}&sparkline=false&price_change_percentage=24h,7d,30d,1y`;
-                const res = await fetch(url, { signal: controller.signal });
-                if (!res.ok) throw new Error("Rate Limit or API Error");
-                const json = await res.json();
+                // CASE B: Search Active (Rank or Text)
+                const rankQuery = parseInt(searchQuery);
                 
-                data = json.map((c: any) => ({ ...c, type: 'CRYPTO' }));
-                setCryptoTotalCount(10000); 
+                // NEW: Search by Rank Logic
+                if (!isNaN(rankQuery) && rankQuery > 0) {
+                    // Calculate which page this rank belongs to
+                    // Note: CoinGecko doesn't have "get by rank", but market_cap_desc follows rank.
+                    const targetPage = Math.ceil(rankQuery / pageSize);
+                    
+                    // We must fetch the specific page containing this rank
+                    const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${pageSize}&page=${targetPage}&sparkline=false&price_change_percentage=24h,7d,30d,1y`;
+                    
+                    const res = await fetch(url, { signal: controller.signal });
+                    if (!res.ok) throw new Error("API Error");
+                    const json = await res.json();
+                    
+                    // Filter locally for the specific rank
+                    data = json.filter((c:any) => c.market_cap_rank === rankQuery).map((c: any) => ({ ...c, type: 'CRYPTO' }));
+                    
+                    // Update total count so pagination makes sense around this item (optional, or set to rankQuery to focus)
+                    setCryptoTotalCount(10000); 
+
+                } else if (searchQuery.trim().length > 0) {
+                    // Text Search
+                    const searchRes = await fetch(`https://api.coingecko.com/api/v3/search?query=${searchQuery}`, { signal: controller.signal });
+                    const searchJson = await searchRes.json();
+                    const coins = searchJson.coins || [];
+                    
+                    if (coins.length === 0) {
+                        setDisplayedAssets([]);
+                        setCryptoTotalCount(0);
+                        setLoading(false);
+                        return;
+                    }
+
+                    setCryptoTotalCount(coins.length);
+
+                    const start = (currentPage - 1) * pageSize;
+                    const pageCoins = coins.slice(start, start + pageSize);
+                    const ids = pageCoins.map((c: any) => c.id).join(',');
+                    
+                    if (ids) {
+                        const marketsRes = await fetch(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids}&order=market_cap_desc&sparkline=false&price_change_percentage=24h,7d,30d,1y`, { signal: controller.signal });
+                        const marketsJson = await marketsRes.json();
+                        data = marketsJson.map((c: any) => ({ ...c, type: 'CRYPTO' }));
+                    }
+
+                // CASE C: Default Market View (Paginated)
+                } else {
+                    const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${pageSize}&page=${currentPage}&sparkline=false&price_change_percentage=24h,7d,30d,1y`;
+                    const res = await fetch(url, { signal: controller.signal });
+                    if (!res.ok) throw new Error("Rate Limit or API Error");
+                    const json = await res.json();
+                    
+                    data = json.map((c: any) => ({ ...c, type: 'CRYPTO' }));
+                    setCryptoTotalCount(10000); 
+                }
             }
 
             setDisplayedAssets(data.filter(a => !removedIds.has(a.id)));
@@ -488,7 +534,7 @@ const App: React.FC = () => {
   };
 
   const handleResetLayout = () => {
-      if (window.confirm("بازنشانی کامل؟")) {
+      if (window.confirm("بازنشانی کامل (برگشت همه ارزهای حذف شده)؟")) {
           setRemovedIds(new Set());
           localStorage.removeItem(LOCAL_STORAGE_KEY);
       }
@@ -526,6 +572,10 @@ const App: React.FC = () => {
       if (asset.type === 'STOCKS') return 'https://img.icons8.com/color/48/bullish.png';
       return '';
   };
+  
+  // Smart Card Height Logic using viewport height (100vh) to avoid page scrolling for the card itself
+  // Adjusts to fill the screen minus header and padding
+  const cardHeightClass = 'h-[calc(100vh-140px)] min-h-[450px]';
 
   // Helper variables
   const totalPages = Math.ceil(cryptoTotalCount / pageSize);
@@ -570,7 +620,7 @@ const App: React.FC = () => {
               <div className="relative w-full md:w-56">
                 <input 
                     type="text" 
-                    placeholder="جستجو (نام یا نماد)..." 
+                    placeholder="جستجو (نام، نماد یا رتبه)..." 
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
@@ -614,6 +664,22 @@ const App: React.FC = () => {
 
               <div className="h-6 w-px bg-gray-300 hidden md:block" />
 
+              {/* Grid Columns Selector */}
+              <div className="flex items-center gap-1 bg-gray-50 px-2 py-1 rounded-lg border border-gray-200">
+                 <span className="text-xs text-gray-500 uppercase">ستون:</span>
+                 <select 
+                    value={gridCols} 
+                    onChange={(e) => setGridCols(Number(e.target.value))}
+                    className="bg-transparent text-sm font-semibold outline-none text-gray-700"
+                  >
+                    <option value={1}>1</option>
+                    <option value={2}>2</option>
+                    <option value={3}>3</option>
+                  </select>
+              </div>
+
+              <div className="h-6 w-px bg-gray-300 hidden md:block" />
+
               <button
                 onClick={() => setIsLogScale(!isLogScale)}
                 className={`px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${isLogScale ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'}`}
@@ -633,24 +699,38 @@ const App: React.FC = () => {
 
               <div className="h-6 w-px bg-gray-300 hidden md:block" />
 
-              <div className="relative group">
-                <button className="px-3 py-2 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 text-sm">
-                  ⚙️
+              {/* Settings Action Buttons (Moved from Dropdown) */}
+              <div className="flex items-center gap-1">
+                <button 
+                    onClick={handleSaveLayout} 
+                    title="ذخیره چیدمان"
+                    className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-transparent hover:border-blue-100"
+                >
+                    💾
                 </button>
-                {/* Changed this block: Added wrapper with padding (bridge) instead of margin */}
-                <div className="absolute left-0 top-full pt-2 w-48 hidden group-hover:block z-50">
-                  <div className="bg-white rounded-lg shadow-xl border border-gray-100 p-2">
-                    <button onClick={handleSaveLayout} className="w-full text-right px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded">ذخیره چیدمان</button>
-                    <button onClick={handleResetLayout} className="w-full text-right px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded">بازنشانی</button>
-                    <hr className="my-1" />
-                    <button onClick={handleExportBackup} className="w-full text-right px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded">بکاپ</button>
-                    <label className="block w-full text-right px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded cursor-pointer">
-                      ریستور
-                      <input type="file" className="hidden" ref={fileInputRef} onChange={handleImportBackup} accept=".json" />
-                    </label>
-                  </div>
-                </div>
+                <button 
+                    onClick={handleResetLayout} 
+                    title="بازنشانی"
+                    className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-100"
+                >
+                    🔄
+                </button>
+                <button 
+                    onClick={handleExportBackup} 
+                    title="دانلود بکاپ"
+                    className="p-2 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors border border-transparent hover:border-green-100"
+                >
+                    ⬇️
+                </button>
+                <label 
+                    title="ریستور بکاپ"
+                    className="p-2 text-gray-600 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors border border-transparent hover:border-purple-100 cursor-pointer"
+                >
+                    ⬆️
+                    <input type="file" className="hidden" ref={fileInputRef} onChange={handleImportBackup} accept=".json" />
+                </label>
               </div>
+
             </div>
           </div>
         </div>
@@ -679,7 +759,11 @@ const App: React.FC = () => {
             </div>
         ) : (
             <>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className={`grid gap-6 ${
+                  gridCols === 1 ? 'grid-cols-1' : 
+                  gridCols === 2 ? 'grid-cols-1 md:grid-cols-2' : 
+                  'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
+                }`}>
                   {displayedAssets.map((asset) => {
                       const hasDetails = asset.type === 'CRYPTO';
                       // Calculate "To ATH" percentage if applicable
@@ -690,7 +774,7 @@ const App: React.FC = () => {
                       id={`card-${asset.id}`}
                       key={asset.id} 
                       style={{ contentVisibility: 'auto', containIntrinsicSize: '1px 500px' }}
-                      className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col aspect-square transition-all hover:shadow-md"
+                      className={`bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col ${cardHeightClass} transition-all hover:shadow-md`}
                     >
                       {/* 1. Header */}
                       <div className="px-3 py-2 border-b border-gray-100 flex justify-between items-center bg-white shrink-0">
