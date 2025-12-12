@@ -156,6 +156,34 @@ const PAGE_SIZE_OPTIONS = [15, 30, 45, 60, 90];
 
 const LOCAL_STORAGE_KEY = 'crypto_layout_preference_v1';
 
+// Component: Copy Button
+const CopyButton = ({ text }: { text: string }) => {
+  const [copied, setCopied] = useState(false);
+  
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <button 
+      onClick={handleCopy} 
+      className="ml-2 p-1.5 rounded-full hover:bg-gray-100 transition-all text-gray-400 hover:text-blue-500" 
+      title="کپی نماد"
+    >
+      {copied ? (
+        <span className="text-green-500 font-bold text-xs">✓</span>
+      ) : (
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 01-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 011.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 00-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 01-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5" />
+        </svg>
+      )}
+    </button>
+  );
+};
+
 // Lazy Load Wrapper
 const LazyWidget = ({ children }: { children?: React.ReactNode }) => {
   const [isLoaded, setIsLoaded] = useState(false);
@@ -233,6 +261,13 @@ const App: React.FC = () => {
       }
       return 3;
   });
+
+  // Chart Modes State (Price vs Market Cap vs Both)
+  const [chartModes, setChartModes] = useState<Record<string, 'PRICE' | 'MCAP' | 'BOTH'>>({});
+
+  const toggleChartMode = (id: string, mode: 'PRICE' | 'MCAP' | 'BOTH') => {
+      setChartModes(prev => ({ ...prev, [id]: mode }));
+  };
 
   useEffect(() => {
       localStorage.setItem('crypto_grid_cols_v1', String(gridCols));
@@ -953,7 +988,11 @@ const App: React.FC = () => {
                         const hasDetails = asset.type === 'CRYPTO';
                         // Calculate "To ATH" percentage if applicable
                         const toAth = asset.ath && asset.current_price ? ((asset.ath - asset.current_price) / asset.current_price) * 100 : 0;
-                        
+                        const currentChartMode = chartModes[asset.id] || 'PRICE';
+                        const tvSymbol = currentChartMode === 'PRICE' 
+                            ? getTradingViewSymbol(asset) 
+                            : `CRYPTOCAP:${asset.symbol.toUpperCase()}`;
+
                         return (
                       <div 
                         id={`card-${asset.id}`}
@@ -968,6 +1007,7 @@ const App: React.FC = () => {
                             <div className="min-w-0">
                               <div className="flex items-center gap-2">
                                  <h3 className="font-bold text-gray-800 text-2xl truncate">{asset.symbol.split(':').pop()?.toUpperCase()}</h3>
+                                 <CopyButton text={asset.symbol.split(':').pop()?.toUpperCase() || ''} />
                                  {hasDetails && (
                                    <span className="text-base text-gray-500 bg-gray-100 px-2 py-0.5 rounded font-medium flex-shrink-0">#{asset.market_cap_rank || '-'}</span>
                                  )}
@@ -1075,15 +1115,101 @@ const App: React.FC = () => {
                             </div>
                         )}
 
+                        {/* Action Buttons */}
+                        {hasDetails && (
+                            <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 flex flex-col gap-2 shrink-0">
+                                {/* External Links */}
+                                <div className="flex items-center gap-2">
+                                    <a 
+                                        href={`https://www.coingecko.com/en/coins/${asset.id}`} 
+                                        target="_blank" 
+                                        rel="noopener noreferrer"
+                                        className="flex-1 text-center py-1.5 rounded bg-white border border-gray-200 text-[10px] md:text-xs font-bold text-gray-600 hover:bg-green-50 hover:text-green-700 hover:border-green-200 transition-all shadow-sm truncate"
+                                        title="مشاهده در CoinGecko"
+                                    >
+                                        CoinGecko
+                                    </a>
+                                    <a 
+                                        href={`https://coinmarketcap.com/currencies/${asset.name.trim().toLowerCase().replace(/\s+/g, '-')}`} 
+                                        target="_blank" 
+                                        rel="noopener noreferrer"
+                                        className="flex-1 text-center py-1.5 rounded bg-white border border-gray-200 text-[10px] md:text-xs font-bold text-gray-600 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-200 transition-all shadow-sm truncate"
+                                        title="مشاهده در CoinMarketCap"
+                                    >
+                                        CoinMarketCap
+                                    </a>
+                                    <a 
+                                        href="https://app.cryptopective.com/" 
+                                        target="_blank" 
+                                        rel="noopener noreferrer"
+                                        className="flex-1 text-center py-1.5 rounded bg-blue-600 border border-blue-600 text-[10px] md:text-xs font-bold text-white hover:bg-blue-700 hover:border-blue-700 transition-all shadow-sm truncate"
+                                        title="تحلیل در CryptoPective"
+                                    >
+                                        CryptoPective
+                                    </a>
+                                </div>
+                                {/* Chart Toggle */}
+                                <div className="flex bg-gray-100 rounded-lg p-0.5 w-full">
+                                    <button 
+                                        onClick={() => toggleChartMode(asset.id, 'PRICE')}
+                                        className={`flex-1 py-1 rounded-md text-xs font-bold transition-all ${currentChartMode === 'PRICE' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                                    >
+                                        قیمت (Price)
+                                    </button>
+                                    <button 
+                                        onClick={() => toggleChartMode(asset.id, 'MCAP')}
+                                        className={`flex-1 py-1 rounded-md text-xs font-bold transition-all ${currentChartMode === 'MCAP' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                                    >
+                                        ارزش بازار (Cap)
+                                    </button>
+                                    <button 
+                                        onClick={() => toggleChartMode(asset.id, 'BOTH')}
+                                        className={`flex-1 py-1 rounded-md text-xs font-bold transition-all ${currentChartMode === 'BOTH' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                                    >
+                                        همزمان (Dual)
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
                         {/* 4. Chart */}
                         <div className="flex-grow bg-white relative w-full h-full min-h-0">
-                          <LazyWidget>
-                              <TradingViewWidget 
-                                symbol={getTradingViewSymbol(asset)} 
-                                isLogScale={isLogScale}
-                                interval={interval}
-                              />
-                          </LazyWidget>
+                          {currentChartMode === 'BOTH' ? (
+                            <div className="flex flex-col md:flex-row h-full w-full">
+                                <div className="h-1/2 w-full md:h-full md:w-1/2 border-b md:border-b-0 md:border-r border-gray-200 relative">
+                                    <div className="absolute top-2 left-2 z-10 bg-white/90 px-2 py-0.5 rounded text-[10px] font-bold text-gray-500 shadow-sm pointer-events-none border border-gray-100">
+                                        قیمت (Price)
+                                    </div>
+                                    <LazyWidget>
+                                        <TradingViewWidget 
+                                            symbol={getTradingViewSymbol(asset)} 
+                                            isLogScale={isLogScale}
+                                            interval={interval}
+                                        />
+                                    </LazyWidget>
+                                </div>
+                                <div className="h-1/2 w-full md:h-full md:w-1/2 relative">
+                                    <div className="absolute top-2 left-2 z-10 bg-white/90 px-2 py-0.5 rounded text-[10px] font-bold text-gray-500 shadow-sm pointer-events-none border border-gray-100">
+                                         ارزش بازار (Market Cap)
+                                    </div>
+                                    <LazyWidget>
+                                        <TradingViewWidget 
+                                            symbol={`CRYPTOCAP:${asset.symbol.toUpperCase()}`} 
+                                            isLogScale={isLogScale}
+                                            interval={interval}
+                                        />
+                                    </LazyWidget>
+                                </div>
+                            </div>
+                          ) : (
+                              <LazyWidget>
+                                  <TradingViewWidget 
+                                    symbol={tvSymbol} 
+                                    isLogScale={isLogScale}
+                                    interval={interval}
+                                  />
+                              </LazyWidget>
+                          )}
                         </div>
                       </div>
                     )})}
@@ -1137,6 +1263,10 @@ const App: React.FC = () => {
                                 {sortedAssets.map((asset) => {
                                     const isBlocked = removedIds.has(asset.id);
                                     const isExpanded = expandedRowId === asset.id;
+                                    const currentChartMode = chartModes[asset.id] || 'PRICE';
+                                    const tvSymbol = currentChartMode === 'PRICE' 
+                                        ? getTradingViewSymbol(asset) 
+                                        : `CRYPTOCAP:${asset.symbol.toUpperCase()}`;
                                     
                                     // Row styling: active state for expanded row
                                     const rowClass = isBlocked 
@@ -1169,7 +1299,10 @@ const App: React.FC = () => {
                                                     <div className="flex items-center gap-4">
                                                         <img src={getImage(asset)} alt={asset.name} className="w-8 h-8 rounded-full" loading="lazy" />
                                                         <div className="flex flex-col">
-                                                            <span className="font-bold text-gray-900 text-lg group-hover:text-blue-600 transition-colors">{asset.name}</span>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="font-bold text-gray-900 text-lg group-hover:text-blue-600 transition-colors">{asset.name}</span>
+                                                                <CopyButton text={asset.symbol.split(':').pop()?.toUpperCase() || ''} />
+                                                            </div>
                                                             <span className="text-sm text-gray-500 uppercase">{asset.symbol.split(':').pop()}</span>
                                                         </div>
                                                     </div>
@@ -1204,23 +1337,79 @@ const App: React.FC = () => {
                                             {isExpanded && (
                                                 <tr>
                                                     <td colSpan={8} className="p-0 border-b border-gray-200 animate-[fadeIn_0.3s_ease-out]">
-                                                         <div className="w-full h-[1000px] bg-white relative border-t border-blue-100 shadow-inner">
+                                                         <div className="w-full h-[1000px] bg-white relative border-t border-blue-100 shadow-inner flex flex-col">
                                                             {/* Close Button overlay */}
                                                             <button 
                                                                 onClick={(e) => { e.stopPropagation(); setExpandedRowId(null); }}
-                                                                className="absolute top-4 left-4 z-10 bg-white text-gray-400 hover:text-red-600 border border-gray-200 rounded-lg p-2 shadow-sm transition-all hover:scale-105"
+                                                                className="absolute top-4 left-4 z-20 bg-white text-gray-400 hover:text-red-600 border border-gray-200 rounded-lg p-2 shadow-sm transition-all hover:scale-105"
                                                             >
                                                                 بستن ✕
                                                             </button>
 
+                                                            {/* Controls Bar for Table Expanded */}
+                                                            <div className="flex items-center justify-center gap-4 py-2 bg-gray-50 border-b border-gray-200 z-10">
+                                                                <span className="text-sm font-bold text-gray-700">نمودار:</span>
+                                                                <div className="flex bg-white rounded-lg p-1 border border-gray-200 shadow-sm">
+                                                                    <button 
+                                                                        onClick={(e) => { e.stopPropagation(); toggleChartMode(asset.id, 'PRICE'); }}
+                                                                        className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${currentChartMode === 'PRICE' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-100'}`}
+                                                                    >
+                                                                        قیمت
+                                                                    </button>
+                                                                    <button 
+                                                                        onClick={(e) => { e.stopPropagation(); toggleChartMode(asset.id, 'MCAP'); }}
+                                                                        className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${currentChartMode === 'MCAP' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-100'}`}
+                                                                    >
+                                                                        ارزش بازار
+                                                                    </button>
+                                                                    <button 
+                                                                        onClick={(e) => { e.stopPropagation(); toggleChartMode(asset.id, 'BOTH'); }}
+                                                                        className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${currentChartMode === 'BOTH' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-100'}`}
+                                                                    >
+                                                                        همزمان (Dual)
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+
                                                             {/* Chart */}
-                                                            <LazyWidget>
-                                                                <TradingViewWidget 
-                                                                    symbol={getTradingViewSymbol(asset)} 
-                                                                    isLogScale={isLogScale}
-                                                                    interval={interval}
-                                                                />
-                                                            </LazyWidget>
+                                                            <div className="flex-grow relative">
+                                                                {currentChartMode === 'BOTH' ? (
+                                                                    <div className="flex flex-col md:flex-row h-full w-full">
+                                                                        <div className="h-1/2 w-full md:h-full md:w-1/2 border-b md:border-b-0 md:border-r border-gray-200 relative">
+                                                                            <div className="absolute top-2 left-2 z-10 bg-white/90 px-2 py-0.5 rounded text-[10px] font-bold text-gray-500 shadow-sm pointer-events-none border border-gray-100">
+                                                                                قیمت (Price)
+                                                                            </div>
+                                                                            <LazyWidget>
+                                                                                <TradingViewWidget 
+                                                                                    symbol={getTradingViewSymbol(asset)} 
+                                                                                    isLogScale={isLogScale}
+                                                                                    interval={interval}
+                                                                                />
+                                                                            </LazyWidget>
+                                                                        </div>
+                                                                        <div className="h-1/2 w-full md:h-full md:w-1/2 relative">
+                                                                            <div className="absolute top-2 left-2 z-10 bg-white/90 px-2 py-0.5 rounded text-[10px] font-bold text-gray-500 shadow-sm pointer-events-none border border-gray-100">
+                                                                                 ارزش بازار (Market Cap)
+                                                                            </div>
+                                                                            <LazyWidget>
+                                                                                <TradingViewWidget 
+                                                                                    symbol={`CRYPTOCAP:${asset.symbol.toUpperCase()}`} 
+                                                                                    isLogScale={isLogScale}
+                                                                                    interval={interval}
+                                                                                />
+                                                                            </LazyWidget>
+                                                                        </div>
+                                                                    </div>
+                                                                ) : (
+                                                                    <LazyWidget>
+                                                                        <TradingViewWidget 
+                                                                            symbol={tvSymbol} 
+                                                                            isLogScale={isLogScale}
+                                                                            interval={interval}
+                                                                        />
+                                                                    </LazyWidget>
+                                                                )}
+                                                            </div>
                                                          </div>
                                                     </td>
                                                 </tr>
