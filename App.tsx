@@ -12,7 +12,7 @@ interface AssetData {
   id: string;
   symbol: string;
   name: string;
-  type: Category | 'CRYPTO'; // GAINERS are technically CRYPTO
+  type: Category | 'CRYPTO'; 
   description?: string;
   image?: string;
   current_price?: number;
@@ -360,6 +360,22 @@ const App: React.FC = () => {
     setCurrentPage(1);
   }, [activeCategory, searchQuery, showFavoritesOnly, viewMode]);
 
+  // Handle Default Timeframe and Sorting
+  useEffect(() => {
+      // Reset sort config based on category
+      if (activeCategory === 'CRYPTO') {
+          setSortConfig({ key: 'market_cap_rank', direction: 'asc' });
+      } else if (activeCategory === 'GAINERS') {
+          setSortConfig({ key: 'price_change_percentage_24h', direction: 'desc' });
+      } else if (activeCategory === 'FOREX' || activeCategory === 'STOCKS') {
+          setSortConfig({ key: null, direction: 'desc' }); // Default order
+      }
+      
+      // Default interval logic
+      setInterval("D");
+
+  }, [activeCategory]);
+
   // Scroll top on page change
   useEffect(() => {
     if (mainContentRef.current) {
@@ -546,28 +562,34 @@ const App: React.FC = () => {
                     setCryptoTotalCount(10000); 
 
                 } else if (searchQuery.trim().length > 0) {
+                    // *** STANDARD COINGECKO SEARCH ***
                     const searchRes = await fetch(`https://api.coingecko.com/api/v3/search?query=${searchQuery}`, { signal: controller.signal });
                     const searchJson = await searchRes.json();
-                    const coins = searchJson.coins || [];
-                    
-                    if (coins.length === 0) {
+                    const searchCoins = searchJson.coins || [];
+
+                    if (searchCoins.length === 0) {
                         setDisplayedAssets([]);
                         setCryptoTotalCount(0);
                         setLoading(false);
                         return;
                     }
 
-                    // For search results, we fetch details to get price/volume/mcap
+                    // Fetch market data for found coins
+                    // Use a slice of the search results to fetch market data (max page size)
                     const start = (currentPage - 1) * pageSize;
-                    const pageCoins = coins.slice(start, start + pageSize);
+                    // Note: Search API doesn't support pagination, it returns all matches (or top matches).
+                    // We simulate pagination by slicing the result array.
+                    const pageCoins = searchCoins.slice(start, start + pageSize);
                     const ids = pageCoins.map((c: any) => c.id).join(',');
-                    
+
                     if (ids) {
                         const marketsRes = await fetch(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids}&order=market_cap_desc&sparkline=false&price_change_percentage=24h,7d,30d,1y`, { signal: controller.signal });
                         const marketsJson = await marketsRes.json();
-                        const cleaned = processAssets(marketsJson);
-                        data = cleaned.map((c: any) => ({ ...c, type: 'CRYPTO' }));
-                        setCryptoTotalCount(coins.length); // Approximate
+                        data = processAssets(marketsJson).map((c: any) => ({ ...c, type: 'CRYPTO' }));
+                        setCryptoTotalCount(searchCoins.length);
+                    } else {
+                        data = [];
+                        setCryptoTotalCount(0);
                     }
 
                 // CASE D: Default Market View (Paginated)
@@ -610,6 +632,10 @@ const App: React.FC = () => {
   // --- Helpers ---
   const formatCurrency = (value?: number) => {
     if (value === undefined || value === null) return '-';
+    // Handle very small prices for meme coins (e.g. 0.00000123)
+    if (value < 0.01 && value > 0) {
+       return '$' + value.toFixed(8).replace(/\.?0+$/, "");
+    }
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: value < 1 ? 6 : 2 }).format(value);
   };
   
@@ -682,7 +708,6 @@ const App: React.FC = () => {
              return { key, direction: current.direction === 'desc' ? 'asc' : 'desc' };
         }
         // New key, default to desc for metrics, asc for rank
-        // Rank -> Ascending (1, 2, 3...)
         // Others (Price, Vol, Change) -> Descending (High to Low)
         const defaultDir = key === 'market_cap_rank' ? 'asc' : 'desc';
         return { key, direction: defaultDir };
@@ -1009,7 +1034,9 @@ const App: React.FC = () => {
                                  <h3 className="font-bold text-gray-800 text-2xl truncate">{asset.symbol.split(':').pop()?.toUpperCase()}</h3>
                                  <CopyButton text={asset.symbol.split(':').pop()?.toUpperCase() || ''} />
                                  {hasDetails && (
-                                   <span className="text-base text-gray-500 bg-gray-100 px-2 py-0.5 rounded font-medium flex-shrink-0">#{asset.market_cap_rank || '-'}</span>
+                                   <span className="text-base text-gray-500 bg-gray-100 px-2 py-0.5 rounded font-medium flex-shrink-0">
+                                      #{asset.market_cap_rank || '-'}
+                                   </span>
                                  )}
                                  {!hasDetails && (
                                    <span className="text-sm text-gray-400 bg-gray-50 px-1 py-0.5 rounded uppercase flex-shrink-0">{asset.type}</span>
@@ -1292,7 +1319,9 @@ const App: React.FC = () => {
                                                         >
                                                             ★
                                                         </button>
-                                                        <span>{asset.market_cap_rank || '-'}</span>
+                                                        <span>
+                                                            {asset.market_cap_rank || '-'}
+                                                        </span>
                                                     </div>
                                                 </td>
                                                 <td className="px-4 py-5">
@@ -1358,13 +1387,13 @@ const App: React.FC = () => {
                                                                     </button>
                                                                     <button 
                                                                         onClick={(e) => { e.stopPropagation(); toggleChartMode(asset.id, 'MCAP'); }}
-                                                                        className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${currentChartMode === 'MCAP' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-100'}`}
+                                                                        className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${currentChartMode === 'MCAP' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-100'}`}
                                                                     >
                                                                         ارزش بازار
                                                                     </button>
                                                                     <button 
                                                                         onClick={(e) => { e.stopPropagation(); toggleChartMode(asset.id, 'BOTH'); }}
-                                                                        className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${currentChartMode === 'BOTH' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-100'}`}
+                                                                        className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${currentChartMode === 'BOTH' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-100'}`}
                                                                     >
                                                                         همزمان (Dual)
                                                                     </button>
