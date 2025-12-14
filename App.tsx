@@ -3,7 +3,6 @@ import TradingViewWidget from './components/TradingViewWidget';
 import { auth, db } from './firebase';
 import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { GoogleGenAI, Type } from "@google/genai";
 
 // --- Types ---
 type Category = 'CRYPTO' | 'FOREX' | 'STOCKS' | 'GAINERS';
@@ -46,6 +45,115 @@ const BLOCKED_IDS = new Set([
 ]);
 
 const BLOCKED_SYMBOLS = new Set(['usdt', 'usdc', 'dai', 'fdusd', 'usde', 'tusd', 'usdd', 'busd', 'wsteth']);
+
+// --- Insights Database ---
+const COIN_INSIGHTS: Record<string, CoinInsight> = {
+  'bitcoin': {
+    category: 'ذخیره ارزش / پول دیجیتال',
+    utility: 'اولین ارز دیجیتال، طلای دیجیتال، انتقال همتا به همتا بدون واسطه و سانسور.',
+    outlook: 'به عنوان پادشاه بازار، کم‌ریسک‌ترین دارایی کریپتویی محسوب می‌شود. با پذیرش نهادی (ETFها) انتظار رشد پایدار در بلندمدت وجود دارد.'
+  },
+  'ethereum': {
+    category: 'پلتفرم قرارداد هوشمند (L1)',
+    utility: 'میزبان هزاران برنامه غیرمتمرکز (dApps)، امور مالی غیرمتمرکز (DeFi) و NFTها.',
+    outlook: 'رهبر بی چون و چرای اکوسیستم دیفای. با آپدیت‌های مقیاس‌پذیری، جایگاه خود را به عنوان لایه پایه اینترنت آینده محکم کرده است.'
+  },
+  'binancecoin': {
+    category: 'ارز صرافی / زیرساخت',
+    utility: 'توکن بومی صرافی بایننس و شبکه BSC. استفاده برای تخفیف کارمزد و سوخت شبکه.',
+    outlook: 'بستگی شدید به موفقیت صرافی بایننس دارد. با وجود چالش‌های رگولاتوری، همچنان یکی از پرکاربردترین اکوسیستم‌هاست.'
+  },
+  'solana': {
+    category: 'قرارداد هوشمند (L1) پرسرعت',
+    utility: 'پردازش تراکنش‌های بسیار سریع و ارزان. مناسب برای دیفای، گیمینگ و پرداخت‌های خرد.',
+    outlook: 'رقیب جدی اتریوم با جامعه کاربری بسیار قوی. اگر مشکلات قطعی شبکه کاملا حل شود، پتانسیل رشد انفجاری دارد.'
+  },
+  'ripple': {
+    category: 'پرداخت‌های بین‌المللی',
+    utility: 'جایگزین سریع و ارزان برای سیستم سوئیفت بانکی جهت انتقال پول بین مرزی.',
+    outlook: 'پیروزی‌های حقوقی اخیر موقعیت آن را تثبیت کرده است. پتانسیل بالایی در صورت پذیرش توسط بانک‌های مرکزی دارد.'
+  },
+  'cardano': {
+    category: 'قرارداد هوشمند (L1) علمی',
+    utility: 'پلتفرمی با رویکرد آکادمیک و امنیت بالا برای قراردادهای هوشمند و هویت دیجیتال.',
+    outlook: 'توسعه کند اما مطمئن. جامعه وفاداری دارد اما برای رقابت با سولانا و اتریوم نیاز به جذب پروژه‌های دیفای بیشتری دارد.'
+  },
+  'dogecoin': {
+    category: 'میم کوین / پرداخت',
+    utility: 'ارز دیجیتال شوخی که به ابزار پرداخت و انعام در اینترنت تبدیل شده است.',
+    outlook: 'ریسک بالا، پاداش بالا. قیمت آن به شدت تحت تاثیر حمایت‌های ایلان ماسک و جو بازار است.'
+  },
+  'toncoin': {
+    category: 'وب 3 / پیام‌رسان',
+    utility: 'ادغام شده با تلگرام برای پرداخت‌های درون برنامه‌ای، کیف پول و اکوسیستم مینی‌اپ‌ها.',
+    outlook: 'با دسترسی به 900 میلیون کاربر تلگرام، یکی از بالاترین پتانسیل‌ها را برای پذیرش عمومی (Mass Adoption) دارد.'
+  },
+  'shiba-inu': {
+    category: 'میم کوین اکوسیستم‌دار',
+    utility: 'تلاش برای تبدیل شدن از یک میم به یک اکوسیستم کامل با شیباریوم (L2) و صرافی غیرمتمرکز.',
+    outlook: 'جامعه کاربری بسیار قوی دارد. موفقیت آن به کاربردی شدن پروژه‌های جانبی‌اش بستگی دارد.'
+  },
+  'polkadot': {
+    category: 'تعامل‌پذیری (Layer 0)',
+    utility: 'اتصال بلاکچین‌های مختلف به یکدیگر برای انتقال داده و دارایی (اینترنت بلاکچین‌ها).',
+    outlook: 'تکنولوژی بسیار پیشرفته‌ای دارد. اگر آینده بلاکچین‌ها "چندزنجیره‌ای" باشد، پولکادات مهره کلیدی خواهد بود.'
+  },
+  'chainlink': {
+    category: 'اوراکل (Oracle)',
+    utility: 'پل ارتباطی بین دنیای واقعی و قراردادهای هوشمند (تامین قیمت‌ها و داده‌ها).',
+    outlook: 'زیرساخت حیاتی دیفای. تقریبا تمام پروژه‌های بزرگ به چین‌لینک نیاز دارند، بنابراین پروژه‌ای بسیار بنیادی و امن است.'
+  },
+  'tron': {
+    category: 'پلتفرم محتوا / پرداخت',
+    utility: 'انتقال بسیار ارزان تتر (USDT) و پلتفرم برنامه‌های غیرمتمرکز.',
+    outlook: 'شبکه‌ای بسیار محبوب برای جابجایی استیبل‌کوین‌ها. کاربردی و پر درآمد است اما از نظر تکنولوژی نوآوری خاصی ندارد.'
+  },
+  'avalanche-2': {
+    category: 'قرارداد هوشمند مقیاس‌پذیر',
+    utility: 'شبکه‌ای با قابلیت شخصی‌سازی بالا (Subnets) برای سازمان‌ها و گیمینگ.',
+    outlook: 'رقیب قدرتمند اتریوم با تمرکز بر توکنیزه کردن دارایی‌های واقعی (RWA) و همکاری‌های سازمانی.'
+  },
+  'matic-network': {
+    category: 'لایه 2 اتریوم (Polygon)',
+    utility: 'افزایش سرعت و کاهش هزینه تراکنش‌های اتریوم. تبدیل شدن به "لایه تجمیع" نقدینگی.',
+    outlook: 'با تغییر نام به POL و ارتقای فنی، نقش کلیدی در مقیاس‌پذیری اتریوم خواهد داشت.'
+  },
+  'near': {
+    category: 'قرارداد هوشمند با کاربری آسان',
+    utility: 'تمرکز بر تجربه کاربری (UX) ساده شبیه وب 2 و هوش مصنوعی غیرمتمرکز.',
+    outlook: 'پیشرو در ترکیب هوش مصنوعی و بلاکچین. پتانسیل رشد بالایی در سایکل هوش مصنوعی دارد.'
+  },
+  'litecoin': {
+    category: 'پول دیجیتال / پرداخت',
+    utility: 'نسخه سبک‌تر بیت‌کوین برای پرداخت‌های سریع و ارزان روزمره.',
+    outlook: 'نوآوری خاصی ندارد اما به دلیل سابقه طولانی و امنیت، همچنان به عنوان "نقره دیجیتال" پذیرفته شده است.'
+  },
+  'uniswap': {
+    category: 'صرافی غیرمتمرکز (DEX)',
+    utility: 'بزرگترین صرافی غیرمتمرکز برای تبادل توکن‌ها بدون نیاز به احراز هویت.',
+    outlook: 'رهبر بازار DEX. با فشارهای رگولاتوری روبروست اما مدل کسب و کار بسیار قدرتمندی دارد.'
+  },
+  'kaspa': {
+    category: 'لایه 1 (PoW) پرسرعت',
+    utility: 'بلاکچین اثبات کار با ساختار BlockDAG برای سرعت بسیار بالا و امنیت بیت‌کوین.',
+    outlook: 'محبوبیت بالایی بین ماینرها و تکنیکال‌کارها دارد. پروژه‌ای نوظهور با پتانسیل رشد فنی.'
+  },
+   'pepe': {
+    category: 'میم کوین خالص',
+    utility: 'صرفا جهت سرگرمی و سفته‌بازی بر اساس میم معروف Pepe the Frog.',
+    outlook: 'بسیار پرنوسان. نماد فرهنگ اینترنتی در کریپتو است و پتانسیل سودهای انفجاری (و ضررهای سنگین) دارد.'
+  },
+   'render-token': {
+    category: 'هوش مصنوعی / رندرینگ',
+    utility: 'شبکه غیرمتمرکز برای اجاره قدرت پردازش GPU جهت رندر گرافیکی و AI.',
+    outlook: 'یکی از مهم‌ترین پروژه‌های حوزه AI و Metaverse. با رشد تقاضا برای GPU، آینده درخشانی دارد.'
+  },
+   'fetch-ai': {
+    category: 'هوش مصنوعی (AI)',
+    utility: 'پلتفرم عوامل هوشمند خودکار برای انجام وظایف اقتصادی.',
+    outlook: 'بخشی از اتحاد بزرگ ASI (Superintelligence). پیشرو در ترند هوش مصنوعی.'
+  }
+};
 
 // --- Constants & Data ---
 
@@ -272,10 +380,6 @@ const App: React.FC = () => {
 
   // Chart Modes State (Price vs Market Cap vs Both vs Info)
   const [chartModes, setChartModes] = useState<Record<string, ChartMode>>({});
-  
-  // AI Insights State
-  const [insights, setInsights] = useState<Record<string, CoinInsight>>({});
-  const [insightLoading, setInsightLoading] = useState<string | null>(null);
 
   const toggleChartMode = (id: string, mode: ChartMode) => {
       setChartModes(prev => ({ ...prev, [id]: mode }));
@@ -506,8 +610,7 @@ const App: React.FC = () => {
                 }
 
                 if (allCoins.length === 0 && !controller.signal.aborted) {
-                     // Only throw if we truly have no data and it wasn't an abort
-                     if (allCoins.length === 0) throw new Error("API Limit or Network Error");
+                     throw new Error("API Limit or Network Error");
                 }
                 
                 // Process Assets: Filter Blocklist, Stablecoins, and Duplicates
@@ -546,21 +649,17 @@ const App: React.FC = () => {
                 const res = await fetch(url, { signal: controller.signal });
                 const json = await res.json();
                 
-                if (Array.isArray(json)) {
-                     // Process Assets: Filter Blocklist, Stablecoins, and Duplicates
-                    let filtered = processAssets(json);
+                // Process Assets: Filter Blocklist, Stablecoins, and Duplicates
+                let filtered = processAssets(json);
 
-                    if (searchQuery) {
-                        const q = searchQuery.toLowerCase();
-                        filtered = filtered.filter((c: any) => c.symbol.toLowerCase().includes(q) || c.name.toLowerCase().includes(q));
-                    }
-                    
-                    setCryptoTotalCount(filtered.length);
-                    const start = (currentPage - 1) * pageSize;
-                    data = filtered.slice(start, start + pageSize).map((c: any) => ({ ...c, type: 'CRYPTO' }));
-                } else {
-                     data = [];
+                if (searchQuery) {
+                    const q = searchQuery.toLowerCase();
+                    filtered = filtered.filter((c: any) => c.symbol.toLowerCase().includes(q) || c.name.toLowerCase().includes(q));
                 }
+                
+                setCryptoTotalCount(filtered.length);
+                const start = (currentPage - 1) * pageSize;
+                data = filtered.slice(start, start + pageSize).map((c: any) => ({ ...c, type: 'CRYPTO' }));
             
             } else {
                 // CASE C: Search Active (Rank or Text) for Standard Crypto
@@ -574,11 +673,9 @@ const App: React.FC = () => {
                     if (!res.ok) throw new Error("API Error");
                     const json = await res.json();
                     
-                    if (Array.isArray(json)) {
-                        const cleaned = processAssets(json);
-                        data = cleaned.filter((c:any) => c.market_cap_rank === rankQuery).map((c: any) => ({ ...c, type: 'CRYPTO' }));
-                        setCryptoTotalCount(10000); 
-                    }
+                    const cleaned = processAssets(json);
+                    data = cleaned.filter((c:any) => c.market_cap_rank === rankQuery).map((c: any) => ({ ...c, type: 'CRYPTO' }));
+                    setCryptoTotalCount(10000); 
 
                 } else if (searchQuery.trim().length > 0) {
                     // *** STANDARD COINGECKO SEARCH ***
@@ -604,10 +701,8 @@ const App: React.FC = () => {
                     if (ids) {
                         const marketsRes = await fetch(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids}&order=market_cap_desc&sparkline=false&price_change_percentage=24h,7d,30d,1y`, { signal: controller.signal });
                         const marketsJson = await marketsRes.json();
-                        if (Array.isArray(marketsJson)) {
-                            data = processAssets(marketsJson).map((c: any) => ({ ...c, type: 'CRYPTO' }));
-                            setCryptoTotalCount(searchCoins.length);
-                        }
+                        data = processAssets(marketsJson).map((c: any) => ({ ...c, type: 'CRYPTO' }));
+                        setCryptoTotalCount(searchCoins.length);
                     } else {
                         data = [];
                         setCryptoTotalCount(0);
@@ -617,22 +712,11 @@ const App: React.FC = () => {
                 } else {
                     const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${pageSize}&page=${currentPage}&sparkline=false&price_change_percentage=24h,7d,30d,1y`;
                     const res = await fetch(url, { signal: controller.signal });
-                    if (!res.ok) {
-                         console.warn("Coingecko fetch failed", res.status);
-                         // Don't throw if we can help it, just show empty
-                         throw new Error("API Limit"); 
-                    }
+                    if (!res.ok) throw new Error("Rate Limit or API Error");
                     const json = await res.json();
-                    
-                    // CRITICAL FIX: Check if json is array. CoinGecko returns object on error (e.g. Rate Limit)
-                    if (Array.isArray(json)) {
-                         const cleaned = processAssets(json);
-                         data = cleaned.map((c: any) => ({ ...c, type: 'CRYPTO' }));
-                         setCryptoTotalCount(10000); 
-                    } else {
-                        console.error("Invalid API Response", json);
-                        throw new Error("Invalid API Data");
-                    }
+                    const cleaned = processAssets(json);
+                    data = cleaned.map((c: any) => ({ ...c, type: 'CRYPTO' }));
+                    setCryptoTotalCount(10000); 
                 }
             }
 
@@ -646,7 +730,7 @@ const App: React.FC = () => {
         } catch (err: any) {
             if (err.name !== 'AbortError') {
                 console.error(err);
-                setError("خطا در برقراری ارتباط با سرور یا محدودیت API.");
+                setError("خطا در برقراری ارتباط با سرور.");
             }
         } finally {
             if (!controller.signal.aborted) setLoading(false);
@@ -684,10 +768,7 @@ const App: React.FC = () => {
   const getTradingViewSymbol = (asset: AssetData) => {
     if (asset.type === 'CRYPTO') {
         if (asset.symbol.toLowerCase() === 'usdt') return 'USDCUSDT';
-        // Sanitize symbol: Remove special chars like '-' or '.' or numbers that might confuse TV
-        // e.g. "uni-v2" -> "UNIV2"
-        const cleanSymbol = asset.symbol.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-        return `${cleanSymbol}USDT`;
+        return `${asset.symbol.toUpperCase()}USDT`;
     }
     return asset.symbol;
   };
@@ -806,64 +887,6 @@ const App: React.FC = () => {
       } catch (err) { alert("Invalid file"); }
     };
     reader.readAsText(file);
-  };
-
-  // --- Gemini AI Insight Fetcher ---
-  const fetchInsight = async (asset: AssetData) => {
-    if (insights[asset.id]) return; // Already cached
-
-    if (!process.env.API_KEY) {
-        console.error("Gemini API Key is missing. Ensure process.env.API_KEY is set in your build/deployment environment.");
-        alert("کلید API جمنای تنظیم نشده است. لطفا تنظیمات محیطی سایت را بررسی کنید.");
-        return;
-    }
-
-    setInsightLoading(asset.id);
-    try {
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-        const prompt = `Analyze the cryptocurrency "${asset.name}" (${asset.symbol}).
-        Provide a JSON response in Persian (Farsi) with these fields:
-        - category: A short category name (e.g., L1, Meme, AI, DeFi).
-        - utility: A brief explanation of its main use case and technology (approx 2 sentences).
-        - outlook: A brief analysis of its future potential and investment risks (approx 2 sentences).
-        Keep the tone professional and informative.
-        `;
-
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: {
-                responseMimeType: 'application/json',
-                responseSchema: {
-                    type: Type.OBJECT,
-                    properties: {
-                        category: { type: Type.STRING },
-                        utility: { type: Type.STRING },
-                        outlook: { type: Type.STRING },
-                    },
-                    required: ['category', 'utility', 'outlook']
-                }
-            }
-        });
-
-        let text = response.text || "{}";
-        // Clean Markdown code blocks if present (common issue with Gemini responses)
-        text = text.replace(/^```json\s*/, "").replace(/```$/, "").trim();
-
-        if (text) {
-            const data = JSON.parse(text);
-            setInsights(prev => ({ ...prev, [asset.id]: data }));
-        }
-    } catch (e) {
-        console.error("AI Insight Error", e);
-    } finally {
-        setInsightLoading(null);
-    }
-  };
-
-  const handleInfoClick = (asset: AssetData) => {
-      toggleChartMode(asset.id, 'INFO');
-      fetchInsight(asset);
   };
 
   const getImage = (asset: AssetData) => {
@@ -1110,9 +1133,7 @@ const App: React.FC = () => {
                         const tvSymbol = currentChartMode === 'PRICE' 
                             ? getTradingViewSymbol(asset) 
                             : `CRYPTOCAP:${asset.symbol.toUpperCase()}`;
-                        
-                        const insight = insights[asset.id];
-                        const isLoadingInsight = insightLoading === asset.id;
+                        const insight = COIN_INSIGHTS[asset.id];
 
                         return (
                       <div 
@@ -1169,7 +1190,7 @@ const App: React.FC = () => {
                             <div className="px-5 py-4 bg-gray-50 flex justify-between items-center border-b border-gray-100 shrink-0 h-[65px]">
                                <div className="flex items-center gap-1">
                                   <span className="text-gray-800 font-bold text-3xl">{formatCurrency(asset.current_price)}</span>
-                                </div>
+                               </div>
                                <div className="flex items-center gap-1">
                                   <span className={`font-bold text-lg ${getPercentClass(asset.price_change_percentage_24h)} dir-ltr`}>
                                       {fmtPct(asset.price_change_percentage_24h)} (24h)
@@ -1292,7 +1313,7 @@ const App: React.FC = () => {
                                         همزمان
                                     </button>
                                     <button 
-                                        onClick={() => handleInfoClick(asset)}
+                                        onClick={() => toggleChartMode(asset.id, 'INFO')}
                                         className={`flex-1 py-1 rounded-md text-xs font-bold transition-all ${currentChartMode === 'INFO' ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-500 hover:text-purple-600'}`}
                                     >
                                         تحلیل (Info)
@@ -1306,41 +1327,33 @@ const App: React.FC = () => {
                           {currentChartMode === 'INFO' ? (
                             <div className="p-6 h-full overflow-y-auto custom-scrollbar bg-white">
                                 <div className="flex flex-col gap-6">
-                                    {isLoadingInsight ? (
-                                        <div className="flex flex-col items-center justify-center h-full gap-4">
-                                            <div className="w-8 h-8 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin"></div>
-                                            <p className="text-purple-600 font-medium animate-pulse">درحال دریافت تحلیل از هوش مصنوعی...</p>
-                                        </div>
-                                    ) : insight ? (
+                                    {insight ? (
                                         <>
-                                            <div className="bg-purple-50 p-4 rounded-xl border border-purple-100 animate-[fadeIn_0.5s_ease-out]">
+                                            <div className="bg-purple-50 p-4 rounded-xl border border-purple-100">
                                                 <h4 className="text-purple-800 font-bold mb-2 flex items-center gap-2">
                                                     <span className="text-xl">📂</span> دسته‌بندی
                                                 </h4>
                                                 <p className="text-gray-700 font-medium leading-relaxed">{insight.category}</p>
                                             </div>
 
-                                            <div className="animate-[fadeIn_0.6s_ease-out]">
+                                            <div>
                                                 <h4 className="text-gray-800 font-bold mb-2 flex items-center gap-2">
                                                     <span className="text-xl">🛠️</span> کاربرد و هدف پروژه
                                                 </h4>
                                                 <p className="text-gray-600 leading-loose text-justify">{insight.utility}</p>
                                             </div>
 
-                                            <div className="animate-[fadeIn_0.7s_ease-out]">
+                                            <div>
                                                 <h4 className="text-gray-800 font-bold mb-2 flex items-center gap-2">
                                                     <span className="text-xl">🚀</span> آینده و پتانسیل رشد
                                                 </h4>
                                                 <p className="text-gray-600 leading-loose text-justify">{insight.outlook}</p>
                                             </div>
-                                            <div className="text-[10px] text-gray-400 text-center mt-4">
-                                                * تحلیل توسط هوش مصنوعی Gemini تولید شده است.
-                                            </div>
                                         </>
                                     ) : (
                                         <div className="flex flex-col items-center justify-center h-full text-center py-10 opacity-70">
-                                            <span className="text-4xl mb-4">⚠️</span>
-                                            <p className="text-gray-500 font-medium">خطا در دریافت اطلاعات. لطفا دوباره تلاش کنید.</p>
+                                            <span className="text-4xl mb-4">📝</span>
+                                            <p className="text-gray-500 font-medium">داده‌های تحلیلی برای این ارز در دسترس نیست.</p>
                                         </div>
                                     )}
                                 </div>
@@ -1438,9 +1451,7 @@ const App: React.FC = () => {
                                     const tvSymbol = currentChartMode === 'PRICE' 
                                         ? getTradingViewSymbol(asset) 
                                         : `CRYPTOCAP:${asset.symbol.toUpperCase()}`;
-                                    
-                                    const insight = insights[asset.id];
-                                    const isLoadingInsight = insightLoading === asset.id;
+                                    const insight = COIN_INSIGHTS[asset.id];
                                     
                                     // Row styling: active state for expanded row
                                     const rowClass = isBlocked 
@@ -1545,8 +1556,8 @@ const App: React.FC = () => {
                                                                         همزمان
                                                                     </button>
                                                                     <button 
-                                                                        onClick={(e) => { e.stopPropagation(); handleInfoClick(asset); }}
-                                                                        className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${currentChartMode === 'INFO' ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-500 hover:text-purple-600'}`}
+                                                                        onClick={(e) => { e.stopPropagation(); toggleChartMode(asset.id, 'INFO'); }}
+                                                                        className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${currentChartMode === 'INFO' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-100'}`}
                                                                     >
                                                                         تحلیل
                                                                     </button>
@@ -1558,41 +1569,33 @@ const App: React.FC = () => {
                                                                 {currentChartMode === 'INFO' ? (
                                                                      <div className="p-6 h-full overflow-y-auto custom-scrollbar bg-white max-w-4xl mx-auto">
                                                                         <div className="flex flex-col gap-6">
-                                                                            {isLoadingInsight ? (
-                                                                                <div className="flex flex-col items-center justify-center h-full gap-4">
-                                                                                    <div className="w-8 h-8 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin"></div>
-                                                                                    <p className="text-purple-600 font-medium animate-pulse">درحال دریافت تحلیل از هوش مصنوعی...</p>
-                                                                                </div>
-                                                                            ) : insight ? (
+                                                                            {insight ? (
                                                                                 <>
-                                                                                    <div className="bg-purple-50 p-4 rounded-xl border border-purple-100 animate-[fadeIn_0.5s_ease-out]">
+                                                                                    <div className="bg-purple-50 p-4 rounded-xl border border-purple-100">
                                                                                         <h4 className="text-purple-800 font-bold mb-2 flex items-center gap-2">
                                                                                             <span className="text-xl">📂</span> دسته‌بندی
                                                                                         </h4>
                                                                                         <p className="text-gray-700 font-medium leading-relaxed">{insight.category}</p>
                                                                                     </div>
 
-                                                                                    <div className="animate-[fadeIn_0.6s_ease-out]">
+                                                                                    <div>
                                                                                         <h4 className="text-gray-800 font-bold mb-2 flex items-center gap-2">
                                                                                             <span className="text-xl">🛠️</span> کاربرد و هدف پروژه
                                                                                         </h4>
                                                                                         <p className="text-gray-600 leading-loose text-justify">{insight.utility}</p>
                                                                                     </div>
 
-                                                                                    <div className="animate-[fadeIn_0.7s_ease-out]">
+                                                                                    <div>
                                                                                         <h4 className="text-gray-800 font-bold mb-2 flex items-center gap-2">
                                                                                             <span className="text-xl">🚀</span> آینده و پتانسیل رشد
                                                                                         </h4>
                                                                                         <p className="text-gray-600 leading-loose text-justify">{insight.outlook}</p>
                                                                                     </div>
-                                                                                    <div className="text-[10px] text-gray-400 text-center mt-4">
-                                                                                        * تحلیل توسط هوش مصنوعی Gemini تولید شده است.
-                                                                                    </div>
                                                                                 </>
                                                                             ) : (
                                                                                 <div className="flex flex-col items-center justify-center h-full text-center py-10 opacity-70">
-                                                                                    <span className="text-4xl mb-4">⚠️</span>
-                                                                                    <p className="text-gray-500 font-medium">خطا در دریافت اطلاعات. لطفا دوباره تلاش کنید.</p>
+                                                                                    <span className="text-4xl mb-4">📝</span>
+                                                                                    <p className="text-gray-500 font-medium">داده‌های تحلیلی برای این ارز در دسترس نیست.</p>
                                                                                 </div>
                                                                             )}
                                                                         </div>
