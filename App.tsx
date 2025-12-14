@@ -506,7 +506,8 @@ const App: React.FC = () => {
                 }
 
                 if (allCoins.length === 0 && !controller.signal.aborted) {
-                     throw new Error("API Limit or Network Error");
+                     // Only throw if we truly have no data and it wasn't an abort
+                     if (allCoins.length === 0) throw new Error("API Limit or Network Error");
                 }
                 
                 // Process Assets: Filter Blocklist, Stablecoins, and Duplicates
@@ -545,17 +546,21 @@ const App: React.FC = () => {
                 const res = await fetch(url, { signal: controller.signal });
                 const json = await res.json();
                 
-                // Process Assets: Filter Blocklist, Stablecoins, and Duplicates
-                let filtered = processAssets(json);
+                if (Array.isArray(json)) {
+                     // Process Assets: Filter Blocklist, Stablecoins, and Duplicates
+                    let filtered = processAssets(json);
 
-                if (searchQuery) {
-                    const q = searchQuery.toLowerCase();
-                    filtered = filtered.filter((c: any) => c.symbol.toLowerCase().includes(q) || c.name.toLowerCase().includes(q));
+                    if (searchQuery) {
+                        const q = searchQuery.toLowerCase();
+                        filtered = filtered.filter((c: any) => c.symbol.toLowerCase().includes(q) || c.name.toLowerCase().includes(q));
+                    }
+                    
+                    setCryptoTotalCount(filtered.length);
+                    const start = (currentPage - 1) * pageSize;
+                    data = filtered.slice(start, start + pageSize).map((c: any) => ({ ...c, type: 'CRYPTO' }));
+                } else {
+                     data = [];
                 }
-                
-                setCryptoTotalCount(filtered.length);
-                const start = (currentPage - 1) * pageSize;
-                data = filtered.slice(start, start + pageSize).map((c: any) => ({ ...c, type: 'CRYPTO' }));
             
             } else {
                 // CASE C: Search Active (Rank or Text) for Standard Crypto
@@ -569,9 +574,11 @@ const App: React.FC = () => {
                     if (!res.ok) throw new Error("API Error");
                     const json = await res.json();
                     
-                    const cleaned = processAssets(json);
-                    data = cleaned.filter((c:any) => c.market_cap_rank === rankQuery).map((c: any) => ({ ...c, type: 'CRYPTO' }));
-                    setCryptoTotalCount(10000); 
+                    if (Array.isArray(json)) {
+                        const cleaned = processAssets(json);
+                        data = cleaned.filter((c:any) => c.market_cap_rank === rankQuery).map((c: any) => ({ ...c, type: 'CRYPTO' }));
+                        setCryptoTotalCount(10000); 
+                    }
 
                 } else if (searchQuery.trim().length > 0) {
                     // *** STANDARD COINGECKO SEARCH ***
@@ -597,8 +604,10 @@ const App: React.FC = () => {
                     if (ids) {
                         const marketsRes = await fetch(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids}&order=market_cap_desc&sparkline=false&price_change_percentage=24h,7d,30d,1y`, { signal: controller.signal });
                         const marketsJson = await marketsRes.json();
-                        data = processAssets(marketsJson).map((c: any) => ({ ...c, type: 'CRYPTO' }));
-                        setCryptoTotalCount(searchCoins.length);
+                        if (Array.isArray(marketsJson)) {
+                            data = processAssets(marketsJson).map((c: any) => ({ ...c, type: 'CRYPTO' }));
+                            setCryptoTotalCount(searchCoins.length);
+                        }
                     } else {
                         data = [];
                         setCryptoTotalCount(0);
@@ -608,11 +617,22 @@ const App: React.FC = () => {
                 } else {
                     const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${pageSize}&page=${currentPage}&sparkline=false&price_change_percentage=24h,7d,30d,1y`;
                     const res = await fetch(url, { signal: controller.signal });
-                    if (!res.ok) throw new Error("Rate Limit or API Error");
+                    if (!res.ok) {
+                         console.warn("Coingecko fetch failed", res.status);
+                         // Don't throw if we can help it, just show empty
+                         throw new Error("API Limit"); 
+                    }
                     const json = await res.json();
-                    const cleaned = processAssets(json);
-                    data = cleaned.map((c: any) => ({ ...c, type: 'CRYPTO' }));
-                    setCryptoTotalCount(10000); 
+                    
+                    // CRITICAL FIX: Check if json is array. CoinGecko returns object on error (e.g. Rate Limit)
+                    if (Array.isArray(json)) {
+                         const cleaned = processAssets(json);
+                         data = cleaned.map((c: any) => ({ ...c, type: 'CRYPTO' }));
+                         setCryptoTotalCount(10000); 
+                    } else {
+                        console.error("Invalid API Response", json);
+                        throw new Error("Invalid API Data");
+                    }
                 }
             }
 
@@ -626,7 +646,7 @@ const App: React.FC = () => {
         } catch (err: any) {
             if (err.name !== 'AbortError') {
                 console.error(err);
-                setError("خطا در برقراری ارتباط با سرور.");
+                setError("خطا در برقراری ارتباط با سرور یا محدودیت API.");
             }
         } finally {
             if (!controller.signal.aborted) setLoading(false);
@@ -664,7 +684,10 @@ const App: React.FC = () => {
   const getTradingViewSymbol = (asset: AssetData) => {
     if (asset.type === 'CRYPTO') {
         if (asset.symbol.toLowerCase() === 'usdt') return 'USDCUSDT';
-        return `${asset.symbol.toUpperCase()}USDT`;
+        // Sanitize symbol: Remove special chars like '-' or '.' or numbers that might confuse TV
+        // e.g. "uni-v2" -> "UNIV2"
+        const cleanSymbol = asset.symbol.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+        return `${cleanSymbol}USDT`;
     }
     return asset.symbol;
   };
@@ -789,6 +812,12 @@ const App: React.FC = () => {
   const fetchInsight = async (asset: AssetData) => {
     if (insights[asset.id]) return; // Already cached
 
+    if (!process.env.API_KEY) {
+        console.error("Gemini API Key is missing. Ensure process.env.API_KEY is set in your build/deployment environment.");
+        alert("کلید API جمنای تنظیم نشده است. لطفا تنظیمات محیطی سایت را بررسی کنید.");
+        return;
+    }
+
     setInsightLoading(asset.id);
     try {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -817,7 +846,10 @@ const App: React.FC = () => {
             }
         });
 
-        const text = response.text;
+        let text = response.text || "{}";
+        // Clean Markdown code blocks if present (common issue with Gemini responses)
+        text = text.replace(/^```json\s*/, "").replace(/```$/, "").trim();
+
         if (text) {
             const data = JSON.parse(text);
             setInsights(prev => ({ ...prev, [asset.id]: data }));
@@ -1137,7 +1169,7 @@ const App: React.FC = () => {
                             <div className="px-5 py-4 bg-gray-50 flex justify-between items-center border-b border-gray-100 shrink-0 h-[65px]">
                                <div className="flex items-center gap-1">
                                   <span className="text-gray-800 font-bold text-3xl">{formatCurrency(asset.current_price)}</span>
-                               </div>
+                                </div>
                                <div className="flex items-center gap-1">
                                   <span className={`font-bold text-lg ${getPercentClass(asset.price_change_percentage_24h)} dir-ltr`}>
                                       {fmtPct(asset.price_change_percentage_24h)} (24h)
