@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import TradingViewWidget from './components/TradingViewWidget';
 import { auth, db } from './firebase';
@@ -896,17 +895,7 @@ const App: React.FC = () => {
 
   const handleInfoClick = (asset: AssetData) => {
       // Create a comprehensive analysis prompt
-      const prompt = `
-تحلیل جامع و پیش‌بینی آینده ارز دیجیتال ${asset.name} (${asset.symbol}) چیست؟
-
-لطفاً موارد زیر را بررسی کنید:
-۱. اطلاعات کلی، فاصله تا سقف، و فاصله تا بهترین حمایت (به درصد و قیمت).
-۲. آمار دقیق توکن‌های در حال گردش و توکن‌های کلی.
-۳. تحلیل جامع پروژه: توکن چیست و چه کاربردی دارد؟
-۴. پیش‌بینی آینده توکن: چه قیمتی و چه کاربردی؟
-
-لطفاً پاسخ را به صورت جدول‌بندی شده و مرتب ارائه دهید، مخصوصاً بخش‌های "تاریخ آزادسازی توکن" و "پیش‌بینی قیمت در سال‌های آینده".
-      `.trim();
+      const prompt = `حلیل جامع و پیش‌بینی آینده ارز دیجیتال ${asset.name} (${asset.symbol}) چیست؟آمار دقیق توکن‌های در حال گردش و توکن‌های کلیدر توکن های در حال گردش ،تحلیل جامع پروژه: توکن چیست و چه کاربردی دارد؟،پیش‌بینی آینده توکن: چه قیمتی و چه کاربردی؟`;
       
       navigator.clipboard.writeText(prompt).catch(() => {});
       
