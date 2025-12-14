@@ -3,10 +3,12 @@ import TradingViewWidget from './components/TradingViewWidget';
 import { auth, db } from './firebase';
 import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { GoogleGenAI, Type } from "@google/genai";
 
 // --- Types ---
 type Category = 'CRYPTO' | 'FOREX' | 'STOCKS' | 'GAINERS';
 type ViewMode = 'GRID' | 'TABLE';
+type ChartMode = 'PRICE' | 'MCAP' | 'BOTH' | 'INFO';
 
 interface AssetData {
   id: string;
@@ -27,6 +29,12 @@ interface AssetData {
   ath_change_percentage?: number;
   high_24h?: number;
   low_24h?: number;
+}
+
+interface CoinInsight {
+  category: string;
+  utility: string;
+  outlook: string;
 }
 
 // --- Configuration ---
@@ -262,10 +270,14 @@ const App: React.FC = () => {
       return 3;
   });
 
-  // Chart Modes State (Price vs Market Cap vs Both)
-  const [chartModes, setChartModes] = useState<Record<string, 'PRICE' | 'MCAP' | 'BOTH'>>({});
+  // Chart Modes State (Price vs Market Cap vs Both vs Info)
+  const [chartModes, setChartModes] = useState<Record<string, ChartMode>>({});
+  
+  // AI Insights State
+  const [insights, setInsights] = useState<Record<string, CoinInsight>>({});
+  const [insightLoading, setInsightLoading] = useState<string | null>(null);
 
-  const toggleChartMode = (id: string, mode: 'PRICE' | 'MCAP' | 'BOTH') => {
+  const toggleChartMode = (id: string, mode: ChartMode) => {
       setChartModes(prev => ({ ...prev, [id]: mode }));
   };
 
@@ -773,6 +785,55 @@ const App: React.FC = () => {
     reader.readAsText(file);
   };
 
+  // --- Gemini AI Insight Fetcher ---
+  const fetchInsight = async (asset: AssetData) => {
+    if (insights[asset.id]) return; // Already cached
+
+    setInsightLoading(asset.id);
+    try {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const prompt = `Analyze the cryptocurrency "${asset.name}" (${asset.symbol}).
+        Provide a JSON response in Persian (Farsi) with these fields:
+        - category: A short category name (e.g., L1, Meme, AI, DeFi).
+        - utility: A brief explanation of its main use case and technology (approx 2 sentences).
+        - outlook: A brief analysis of its future potential and investment risks (approx 2 sentences).
+        Keep the tone professional and informative.
+        `;
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: {
+                responseMimeType: 'application/json',
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        category: { type: Type.STRING },
+                        utility: { type: Type.STRING },
+                        outlook: { type: Type.STRING },
+                    },
+                    required: ['category', 'utility', 'outlook']
+                }
+            }
+        });
+
+        const text = response.text;
+        if (text) {
+            const data = JSON.parse(text);
+            setInsights(prev => ({ ...prev, [asset.id]: data }));
+        }
+    } catch (e) {
+        console.error("AI Insight Error", e);
+    } finally {
+        setInsightLoading(null);
+    }
+  };
+
+  const handleInfoClick = (asset: AssetData) => {
+      toggleChartMode(asset.id, 'INFO');
+      fetchInsight(asset);
+  };
+
   const getImage = (asset: AssetData) => {
       if (asset.image) return asset.image;
       if (asset.type === 'FOREX') return 'https://img.icons8.com/color/48/currency-exchange.png';
@@ -1017,6 +1078,9 @@ const App: React.FC = () => {
                         const tvSymbol = currentChartMode === 'PRICE' 
                             ? getTradingViewSymbol(asset) 
                             : `CRYPTOCAP:${asset.symbol.toUpperCase()}`;
+                        
+                        const insight = insights[asset.id];
+                        const isLoadingInsight = insightLoading === asset.id;
 
                         return (
                       <div 
@@ -1187,21 +1251,69 @@ const App: React.FC = () => {
                                         onClick={() => toggleChartMode(asset.id, 'MCAP')}
                                         className={`flex-1 py-1 rounded-md text-xs font-bold transition-all ${currentChartMode === 'MCAP' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                                     >
-                                        ارزش بازار (Cap)
+                                        ارزش بازار
                                     </button>
                                     <button 
                                         onClick={() => toggleChartMode(asset.id, 'BOTH')}
                                         className={`flex-1 py-1 rounded-md text-xs font-bold transition-all ${currentChartMode === 'BOTH' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                                     >
-                                        همزمان (Dual)
+                                        همزمان
+                                    </button>
+                                    <button 
+                                        onClick={() => handleInfoClick(asset)}
+                                        className={`flex-1 py-1 rounded-md text-xs font-bold transition-all ${currentChartMode === 'INFO' ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-500 hover:text-purple-600'}`}
+                                    >
+                                        تحلیل (Info)
                                     </button>
                                 </div>
                             </div>
                         )}
 
-                        {/* 4. Chart */}
+                        {/* 4. Chart or Info Content */}
                         <div className="flex-grow bg-white relative w-full h-full min-h-0">
-                          {currentChartMode === 'BOTH' ? (
+                          {currentChartMode === 'INFO' ? (
+                            <div className="p-6 h-full overflow-y-auto custom-scrollbar bg-white">
+                                <div className="flex flex-col gap-6">
+                                    {isLoadingInsight ? (
+                                        <div className="flex flex-col items-center justify-center h-full gap-4">
+                                            <div className="w-8 h-8 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin"></div>
+                                            <p className="text-purple-600 font-medium animate-pulse">درحال دریافت تحلیل از هوش مصنوعی...</p>
+                                        </div>
+                                    ) : insight ? (
+                                        <>
+                                            <div className="bg-purple-50 p-4 rounded-xl border border-purple-100 animate-[fadeIn_0.5s_ease-out]">
+                                                <h4 className="text-purple-800 font-bold mb-2 flex items-center gap-2">
+                                                    <span className="text-xl">📂</span> دسته‌بندی
+                                                </h4>
+                                                <p className="text-gray-700 font-medium leading-relaxed">{insight.category}</p>
+                                            </div>
+
+                                            <div className="animate-[fadeIn_0.6s_ease-out]">
+                                                <h4 className="text-gray-800 font-bold mb-2 flex items-center gap-2">
+                                                    <span className="text-xl">🛠️</span> کاربرد و هدف پروژه
+                                                </h4>
+                                                <p className="text-gray-600 leading-loose text-justify">{insight.utility}</p>
+                                            </div>
+
+                                            <div className="animate-[fadeIn_0.7s_ease-out]">
+                                                <h4 className="text-gray-800 font-bold mb-2 flex items-center gap-2">
+                                                    <span className="text-xl">🚀</span> آینده و پتانسیل رشد
+                                                </h4>
+                                                <p className="text-gray-600 leading-loose text-justify">{insight.outlook}</p>
+                                            </div>
+                                            <div className="text-[10px] text-gray-400 text-center mt-4">
+                                                * تحلیل توسط هوش مصنوعی Gemini تولید شده است.
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <div className="flex flex-col items-center justify-center h-full text-center py-10 opacity-70">
+                                            <span className="text-4xl mb-4">⚠️</span>
+                                            <p className="text-gray-500 font-medium">خطا در دریافت اطلاعات. لطفا دوباره تلاش کنید.</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                          ) : currentChartMode === 'BOTH' ? (
                             <div className="flex flex-col md:flex-row h-full w-full">
                                 <div className="h-1/2 w-full md:h-full md:w-1/2 border-b md:border-b-0 md:border-r border-gray-200 relative">
                                     <div className="absolute top-2 left-2 z-10 bg-white/90 px-2 py-0.5 rounded text-[10px] font-bold text-gray-500 shadow-sm pointer-events-none border border-gray-100">
@@ -1294,6 +1406,9 @@ const App: React.FC = () => {
                                     const tvSymbol = currentChartMode === 'PRICE' 
                                         ? getTradingViewSymbol(asset) 
                                         : `CRYPTOCAP:${asset.symbol.toUpperCase()}`;
+                                    
+                                    const insight = insights[asset.id];
+                                    const isLoadingInsight = insightLoading === asset.id;
                                     
                                     // Row styling: active state for expanded row
                                     const rowClass = isBlocked 
@@ -1395,14 +1510,62 @@ const App: React.FC = () => {
                                                                         onClick={(e) => { e.stopPropagation(); toggleChartMode(asset.id, 'BOTH'); }}
                                                                         className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${currentChartMode === 'BOTH' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-100'}`}
                                                                     >
-                                                                        همزمان (Dual)
+                                                                        همزمان
+                                                                    </button>
+                                                                    <button 
+                                                                        onClick={(e) => { e.stopPropagation(); handleInfoClick(asset); }}
+                                                                        className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${currentChartMode === 'INFO' ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-500 hover:text-purple-600'}`}
+                                                                    >
+                                                                        تحلیل
                                                                     </button>
                                                                 </div>
                                                             </div>
 
-                                                            {/* Chart */}
+                                                            {/* Chart or Info Content for Table View */}
                                                             <div className="flex-grow relative">
-                                                                {currentChartMode === 'BOTH' ? (
+                                                                {currentChartMode === 'INFO' ? (
+                                                                     <div className="p-6 h-full overflow-y-auto custom-scrollbar bg-white max-w-4xl mx-auto">
+                                                                        <div className="flex flex-col gap-6">
+                                                                            {isLoadingInsight ? (
+                                                                                <div className="flex flex-col items-center justify-center h-full gap-4">
+                                                                                    <div className="w-8 h-8 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin"></div>
+                                                                                    <p className="text-purple-600 font-medium animate-pulse">درحال دریافت تحلیل از هوش مصنوعی...</p>
+                                                                                </div>
+                                                                            ) : insight ? (
+                                                                                <>
+                                                                                    <div className="bg-purple-50 p-4 rounded-xl border border-purple-100 animate-[fadeIn_0.5s_ease-out]">
+                                                                                        <h4 className="text-purple-800 font-bold mb-2 flex items-center gap-2">
+                                                                                            <span className="text-xl">📂</span> دسته‌بندی
+                                                                                        </h4>
+                                                                                        <p className="text-gray-700 font-medium leading-relaxed">{insight.category}</p>
+                                                                                    </div>
+
+                                                                                    <div className="animate-[fadeIn_0.6s_ease-out]">
+                                                                                        <h4 className="text-gray-800 font-bold mb-2 flex items-center gap-2">
+                                                                                            <span className="text-xl">🛠️</span> کاربرد و هدف پروژه
+                                                                                        </h4>
+                                                                                        <p className="text-gray-600 leading-loose text-justify">{insight.utility}</p>
+                                                                                    </div>
+
+                                                                                    <div className="animate-[fadeIn_0.7s_ease-out]">
+                                                                                        <h4 className="text-gray-800 font-bold mb-2 flex items-center gap-2">
+                                                                                            <span className="text-xl">🚀</span> آینده و پتانسیل رشد
+                                                                                        </h4>
+                                                                                        <p className="text-gray-600 leading-loose text-justify">{insight.outlook}</p>
+                                                                                    </div>
+                                                                                    <div className="text-[10px] text-gray-400 text-center mt-4">
+                                                                                        * تحلیل توسط هوش مصنوعی Gemini تولید شده است.
+                                                                                    </div>
+                                                                                </>
+                                                                            ) : (
+                                                                                <div className="flex flex-col items-center justify-center h-full text-center py-10 opacity-70">
+                                                                                    <span className="text-4xl mb-4">⚠️</span>
+                                                                                    <p className="text-gray-500 font-medium">خطا در دریافت اطلاعات. لطفا دوباره تلاش کنید.</p>
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                ) : currentChartMode === 'BOTH' ? (
                                                                     <div className="flex flex-col md:flex-row h-full w-full">
                                                                         <div className="h-1/2 w-full md:h-full md:w-1/2 border-b md:border-b-0 md:border-r border-gray-200 relative">
                                                                             <div className="absolute top-2 left-2 z-10 bg-white/90 px-2 py-0.5 rounded text-[10px] font-bold text-gray-500 shadow-sm pointer-events-none border border-gray-100">
