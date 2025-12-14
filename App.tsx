@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import TradingViewWidget from './components/TradingViewWidget';
 import { auth, db } from './firebase';
@@ -217,47 +218,26 @@ const FOREX_PAIRS: AssetData[] = [
 ];
 
 const STOCK_DATA: AssetData[] = [
-  { id: 'st-bynd', symbol: 'NASDAQ:BYND', name: 'Beyond Meat', type: 'STOCKS', description: 'تولیدکننده جایگزین‌های گیاهی گوشت مستقر در لس‌آنجلس.' },
-  { id: 'st-rivn', symbol: 'NASDAQ:RIVN', name: 'Rivian Automotive', type: 'STOCKS', description: 'شرکت فناوری خودروسازی آمریکایی که بر تولید خودروهای برقی متمرکز است.' },
-  { id: 'st-plug', symbol: 'NASDAQ:PLUG', name: 'Plug Power', type: 'STOCKS', description: 'توسعه‌دهنده سیستم‌های سلول سوختی هیدروژنی جایگزین باتری‌های سنتی.' },
-  { id: 'st-riot', symbol: 'NASDAQ:RIOT', name: 'Riot Platforms', type: 'STOCKS', description: 'یکی از بزرگترین شرکت‌های استخراج بیت‌کوین و زیرساخت دیجیتال در آمریکا.' },
-  { id: 'st-coin', symbol: 'NASDAQ:COIN', name: 'Coinbase Global', type: 'STOCKS', description: 'پلتفرم مبادله ارزهای دیجیتال و کیف پول آنلاین.' },
-  { id: 'st-nvda', symbol: 'NASDAQ:NVDA', name: 'NVIDIA', type: 'STOCKS', description: 'پیشرو در تولید واحدهای پردازش گرافیکی (GPU) و هوش مصنوعی.' },
-  { id: 'st-tsla', symbol: 'NASDAQ:TSLA', name: 'Tesla', type: 'STOCKS', description: 'تولیدکننده خودروهای برقی، پنل‌های خورشیدی و راه‌حل‌های انرژی پاک.' },
-  { id: 'st-aapl', symbol: 'NASDAQ:AAPL', name: 'Apple', type: 'STOCKS', description: 'بزرگترین شرکت فناوری جهان، سازنده آیفون، مک و سرویس‌های دیجیتال.' },
-  { id: 'st-msft', symbol: 'NASDAQ:MSFT', name: 'Microsoft', type: 'STOCKS', description: 'غول نرم‌افزاری جهان، مالک ویندوز، آفیس، آژور و لینکدین.' },
-  { id: 'st-amzn', symbol: 'NASDAQ:AMZN', name: 'Amazon', type: 'STOCKS', description: 'بزرگترین شرکت تجارت الکترونیک و ارائه دهنده خدمات ابری (AWS) در جهان.' },
-  { id: 'st-goog', symbol: 'NASDAQ:GOOG', name: 'Alphabet (Google)', type: 'STOCKS', description: 'مالک موتور جستجوی گوگل، یوتیوب و سیستم عامل اندروید.' },
-  { id: 'st-meta', symbol: 'NASDAQ:META', name: 'Meta Platforms', type: 'STOCKS', description: 'مالک فیس‌بوک، اینستاگرام و واتس‌اپ، پیشرو در حوزه واقعیت مجازی.' },
-  { id: 'st-amd', symbol: 'NASDAQ:AMD', name: 'AMD', type: 'STOCKS', description: 'تولیدکننده پردازنده‌های کامپیوتری و گرافیکی برای دیتاسنترها و گیمینگ.' },
-  { id: 'st-nflx', symbol: 'NASDAQ:NFLX', name: 'Netflix', type: 'STOCKS', description: 'ارائه‌دهنده پیشرو خدمات پخش آنلاین فیلم و سریال در جهان.' },
-  { id: 'st-pep', symbol: 'NASDAQ:PEP', name: 'PepsiCo', type: 'STOCKS', description: 'شرکت چندملیتی تولید مواد غذایی، اسنک و نوشیدنی.' },
-  { id: 'st-cost', symbol: 'NASDAQ:COST', name: 'Costco Wholesale', type: 'STOCKS', description: 'زنجیره فروشگاه‌های عضویت محور با قیمت عمده‌فروشی.' },
-  { id: 'st-avgo', symbol: 'NASDAQ:AVGO', name: 'Broadcom', type: 'STOCKS', description: 'طراح و تولیدکننده جهانی نیمه‌هادی‌ها و نرم‌افزارهای زیرساختی.' },
-  { id: 'st-intc', symbol: 'NASDAQ:INTC', name: 'Intel', type: 'STOCKS', description: 'یکی از بزرگترین تولیدکنندگان چیپ‌های نیمه‌هادی در جهان.' },
-  { id: 'st-pypl', symbol: 'NASDAQ:PYPL', name: 'PayPal', type: 'STOCKS', description: 'سیستم پرداخت آنلاین بین‌المللی برای انتقال وجه الکترونیکی.' },
-  { id: 'st-jpm', symbol: 'NYSE:JPM', name: 'JPMorgan Chase', type: 'STOCKS', description: 'بزرگترین بانک ایالات متحده و یکی از بزرگترین موسسات مالی جهان.' },
-  { id: 'st-bac', symbol: 'NYSE:BAC', name: 'Bank of America', type: 'STOCKS', description: 'شرکت خدمات مالی و بانکداری چندملیتی آمریکایی.' },
-  { id: 'st-wmt', symbol: 'NYSE:WMT', name: 'Walmart', type: 'STOCKS', description: 'بزرگترین شرکت خرده‌فروشی جهان از نظر درآمد.' },
-  { id: 'st-lly', symbol: 'NYSE:LLY', name: 'Eli Lilly', type: 'STOCKS', description: 'شرکت داروسازی آمریکایی پیشرو در تولید داروهای دیابت و سرطان.' },
-  { id: 'st-pson', symbol: 'NYSE:PSO', name: 'Pearson', type: 'STOCKS', description: 'شرکت خدمات آموزشی و انتشاراتی بریتانیایی.' },
-  { id: 'st-hsba', symbol: 'NYSE:HSBC', name: 'HSBC Holdings', type: 'STOCKS', description: 'یکی از بزرگترین سازمان‌های بانکداری و خدمات مالی در جهان.' },
-  { id: 'st-blnd', symbol: 'OTC:BTLCY', name: 'British Land', type: 'STOCKS', description: 'شرکت سرمایه‌گذاری املاک و مستغلات بریتانیایی.' },
-  { id: 'st-rno', symbol: 'OTC:RNLSY', name: 'Renault', type: 'STOCKS', description: 'تولیدکننده خودرو فرانسوی چندملیتی.' },
-  { id: 'st-tsco', symbol: 'OTC:TSCDY', name: 'Tesco', type: 'STOCKS', description: 'شرکت خرده‌فروشی بریتانیایی و یکی از بزرگترین سوپرمارکت‌های جهان.' },
-  { id: 'st-brby', symbol: 'OTC:BURBY', name: 'Burberry Group', type: 'STOCKS', description: 'خانه مد لوکس بریتانیایی معروف به لباس‌های خاص و اکسسوری.' },
-  { id: 'st-vod', symbol: 'NASDAQ:VOD', name: 'Vodafone Group', type: 'STOCKS', description: 'شرکت مخابراتی چندملیتی بریتانیایی.' },
-  { id: 'st-bmw', symbol: 'OTC:BMWYY', name: 'BMW', type: 'STOCKS', description: 'شرکت خودروسازی آلمانی تولیدکننده خودروهای لوکس و موتورسیکلت.' },
-  { id: 'st-sie', symbol: 'OTC:SIEGY', name: 'Siemens', type: 'STOCKS', description: 'خوشه صنعتی آلمانی متمرکز بر اتوماسیون و دیجیتالی‌سازی.' },
-  { id: 'st-ads', symbol: 'OTC:ADDYY', name: 'Adidas', type: 'STOCKS', description: 'دومین تولیدکننده بزرگ لباس ورزشی در جهان مستقر در آلمان.' },
-  { id: 'st-asml', symbol: 'NASDAQ:ASML', name: 'ASML Holding', type: 'STOCKS', description: 'تولیدکننده هلندی سیستم‌های لیتوگرافی برای صنعت نیمه‌هادی.' },
-  { id: 'st-air', symbol: 'OTC:EADSY', name: 'Airbus', type: 'STOCKS', description: 'شرکت هوافضای اروپایی و تولیدکننده هواپیماهای مسافربری.' },
-  { id: 'st-mc', symbol: 'OTC:LVMUY', name: 'LVMH', type: 'STOCKS', description: 'بزرگترین شرکت کالاهای لوکس جهان (لویی ویتون، دیور و ...).' },
-  { id: 'st-tte', symbol: 'NYSE:TTE', name: 'TotalEnergies', type: 'STOCKS', description: 'شرکت نفت و گاز چندملیتی فرانسوی.' },
-  { id: 'st-alv', symbol: 'OTC:ALIZY', name: 'Allianz', type: 'STOCKS', description: 'شرکت خدمات مالی و بیمه چندملیتی آلمانی.' },
-  { id: 'st-barc', symbol: 'NYSE:BCS', name: 'Barclays', type: 'STOCKS', description: 'بانک جهانی بریتانیایی.' },
-  { id: 'st-baba', symbol: 'NYSE:BABA', name: 'Alibaba Group', type: 'STOCKS', description: 'غول تجارت الکترونیک و فناوری چینی.' },
-  { id: 'st-nio', symbol: 'NYSE:NIO', name: 'NIO Inc.', type: 'STOCKS', description: 'تولیدکننده خودروهای برقی هوشمند چین.' },
+  { id: 'stock-aapl', symbol: 'AAPL', name: 'Apple Inc.', type: 'STOCKS', current_price: 220.50, price_change_percentage_24h: 1.25 },
+  { id: 'stock-msft', symbol: 'MSFT', name: 'Microsoft Corp.', type: 'STOCKS', current_price: 415.30, price_change_percentage_24h: 0.85 },
+  { id: 'stock-googl', symbol: 'GOOGL', name: 'Alphabet Inc.', type: 'STOCKS', current_price: 175.20, price_change_percentage_24h: -0.45 },
+  { id: 'stock-amzn', symbol: 'AMZN', name: 'Amazon.com Inc.', type: 'STOCKS', current_price: 185.10, price_change_percentage_24h: 2.10 },
+  { id: 'stock-tsla', symbol: 'TSLA', name: 'Tesla Inc.', type: 'STOCKS', current_price: 240.40, price_change_percentage_24h: -1.55 },
+  { id: 'stock-nvda', symbol: 'NVDA', name: 'NVIDIA Corp.', type: 'STOCKS', current_price: 120.80, price_change_percentage_24h: 3.50 },
+  { id: 'stock-meta', symbol: 'META', name: 'Meta Platforms', type: 'STOCKS', current_price: 500.25, price_change_percentage_24h: 1.15 },
+  { id: 'stock-nflx', symbol: 'NFLX', name: 'Netflix Inc.', type: 'STOCKS', current_price: 650.10, price_change_percentage_24h: 0.45 },
+  { id: 'stock-amd', symbol: 'AMD', name: 'Advanced Micro Devices', type: 'STOCKS', current_price: 155.60, price_change_percentage_24h: 1.80 },
+  { id: 'stock-intc', symbol: 'INTC', name: 'Intel Corp.', type: 'STOCKS', current_price: 30.50, price_change_percentage_24h: -0.90 },
+  { id: 'stock-pypl', symbol: 'PYPL', name: 'PayPal Holdings', type: 'STOCKS', current_price: 65.40, price_change_percentage_24h: 0.60 },
+  { id: 'stock-adbe', symbol: 'ADBE', name: 'Adobe Inc.', type: 'STOCKS', current_price: 480.20, price_change_percentage_24h: -1.20 },
+  { id: 'stock-crm', symbol: 'CRM', name: 'Salesforce Inc.', type: 'STOCKS', current_price: 260.30, price_change_percentage_24h: 0.75 },
+  { id: 'stock-csco', symbol: 'CSCO', name: 'Cisco Systems', type: 'STOCKS', current_price: 48.90, price_change_percentage_24h: 0.30 },
+  { id: 'stock-pep', symbol: 'PEP', name: 'PepsiCo Inc.', type: 'STOCKS', current_price: 170.50, price_change_percentage_24h: -0.20 },
+  { id: 'stock-ko', symbol: 'KO', name: 'Coca-Cola Co.', type: 'STOCKS', current_price: 60.10, price_change_percentage_24h: 0.15 },
+  { id: 'stock-dis', symbol: 'DIS', name: 'Walt Disney Co.', type: 'STOCKS', current_price: 95.60, price_change_percentage_24h: 1.40 },
+  { id: 'stock-nke', symbol: 'NKE', name: 'Nike Inc.', type: 'STOCKS', current_price: 85.30, price_change_percentage_24h: -0.80 },
+  { id: 'stock-xom', symbol: 'XOM', name: 'Exxon Mobil Corp.', type: 'STOCKS', current_price: 115.40, price_change_percentage_24h: 0.90 },
+  { id: 'stock-cvx', symbol: 'CVX', name: 'Chevron Corp.', type: 'STOCKS', current_price: 155.70, price_change_percentage_24h: 0.50 },
 ];
 
 const TIMEFRAMES = [
@@ -915,8 +895,19 @@ const App: React.FC = () => {
   };
 
   const handleInfoClick = (asset: AssetData) => {
-      // Create a helpful prompt and copy to clipboard
-      const prompt = `تحلیل جامع و پیش‌بینی آینده ارز دیجیتال ${asset.name} (${asset.symbol}) چیست؟`;
+      // Create a comprehensive analysis prompt
+      const prompt = `
+تحلیل جامع و پیش‌بینی آینده ارز دیجیتال ${asset.name} (${asset.symbol}) چیست؟
+
+لطفاً موارد زیر را بررسی کنید:
+۱. اطلاعات کلی، فاصله تا سقف، و فاصله تا بهترین حمایت (به درصد و قیمت).
+۲. آمار دقیق توکن‌های در حال گردش و توکن‌های کلی.
+۳. تحلیل جامع پروژه: توکن چیست و چه کاربردی دارد؟
+۴. پیش‌بینی آینده توکن: چه قیمتی و چه کاربردی؟
+
+لطفاً پاسخ را به صورت جدول‌بندی شده و مرتب ارائه دهید، مخصوصاً بخش‌های "تاریخ آزادسازی توکن" و "پیش‌بینی قیمت در سال‌های آینده".
+      `.trim();
+      
       navigator.clipboard.writeText(prompt).catch(() => {});
       
       // Redirect to Gemini website
