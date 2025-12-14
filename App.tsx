@@ -47,6 +47,7 @@ const BLOCKED_IDS = new Set([
 const BLOCKED_SYMBOLS = new Set(['usdt', 'usdc', 'dai', 'fdusd', 'usde', 'tusd', 'usdd', 'busd', 'wsteth']);
 
 // --- Insights Database ---
+// Note: This static data is kept for reference but dynamic AI fetching is replaced by direct link.
 const COIN_INSIGHTS: Record<string, CoinInsight> = {
   'bitcoin': {
     category: 'ذخیره ارزش / پول دیجیتال',
@@ -317,7 +318,7 @@ const LazyWidget = ({ children }: { children?: React.ReactNode }) => {
               setIsLoaded(true);
               setIsWaiting(false);
               observer.disconnect();
-            }, 300); 
+            }, 3000); 
           }
         } else {
           if (timerRef.current) {
@@ -912,6 +913,15 @@ const App: React.FC = () => {
   const removeAsset = (id: string) => {
       toggleBlockStatus(id);
   };
+
+  const handleInfoClick = (asset: AssetData) => {
+      // Create a helpful prompt and copy to clipboard
+      const prompt = `تحلیل جامع و پیش‌بینی آینده ارز دیجیتال ${asset.name} (${asset.symbol}) چیست؟`;
+      navigator.clipboard.writeText(prompt).catch(() => {});
+      
+      // Redirect to Gemini website
+      window.open("https://gemini.google.com/", "_blank");
+  };
   
   // Smart Card Height Logic using viewport height (100vh) to avoid page scrolling for the card itself
   // Adjusts to fill the screen minus header and padding
@@ -1313,8 +1323,8 @@ const App: React.FC = () => {
                                         همزمان
                                     </button>
                                     <button 
-                                        onClick={() => toggleChartMode(asset.id, 'INFO')}
-                                        className={`flex-1 py-1 rounded-md text-xs font-bold transition-all ${currentChartMode === 'INFO' ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-500 hover:text-purple-600'}`}
+                                        onClick={() => handleInfoClick(asset)}
+                                        className={`flex-1 py-1 rounded-md text-xs font-bold transition-all ${currentChartMode === 'INFO' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-100'}`}
                                     >
                                         تحلیل (Info)
                                     </button>
@@ -1556,7 +1566,7 @@ const App: React.FC = () => {
                                                                         همزمان
                                                                     </button>
                                                                     <button 
-                                                                        onClick={(e) => { e.stopPropagation(); toggleChartMode(asset.id, 'INFO'); }}
+                                                                        onClick={(e) => { e.stopPropagation(); handleInfoClick(asset); }}
                                                                         className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${currentChartMode === 'INFO' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-100'}`}
                                                                     >
                                                                         تحلیل
