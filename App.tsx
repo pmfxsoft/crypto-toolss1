@@ -47,7 +47,6 @@ const BLOCKED_IDS = new Set([
 const BLOCKED_SYMBOLS = new Set(['usdt', 'usdc', 'dai', 'fdusd', 'usde', 'tusd', 'usdd', 'busd', 'wsteth']);
 
 // --- Insights Database ---
-// Note: This static data is kept for reference but dynamic AI fetching is replaced by direct link.
 const COIN_INSIGHTS: Record<string, CoinInsight> = {
   'bitcoin': {
     category: 'ذخیره ارزش / پول دیجیتال',
@@ -251,6 +250,8 @@ const TIMEFRAMES = [
 const PAGE_SIZE_OPTIONS = [15, 30, 45, 60, 90];
 
 const LOCAL_STORAGE_KEY = 'crypto_layout_preference_v1';
+const PREF_INTERVAL_KEY = 'crypto_interval_v1';
+const PREF_CATEGORY_KEY = 'crypto_category_v1';
 
 // Component: Copy Button
 const CopyButton = ({ text }: { text: string }) => {
@@ -277,6 +278,104 @@ const CopyButton = ({ text }: { text: string }) => {
         </svg>
       )}
     </button>
+  );
+};
+
+// Component: Blocked List Modal
+const BlockedListModal = ({ 
+  blockedIds, 
+  allAssets, 
+  onClose 
+}: { 
+  blockedIds: Set<string>, 
+  allAssets: AssetData[], 
+  onClose: () => void 
+}) => {
+  const [copied, setCopied] = useState(false);
+
+  // Prepare data for display
+  const blockedList = useMemo(() => {
+    return Array.from(blockedIds).map(id => {
+       const found = allAssets.find(a => a.id === id);
+       return {
+         id,
+         symbol: found ? found.symbol : '?',
+         name: found ? found.name : 'Unknown / Not Loaded'
+       };
+    });
+  }, [blockedIds, allAssets]);
+
+  const handleCopyList = () => {
+    // Generate a clean list formatted for code insertion (e.g. array of strings)
+    // This makes it easy for the developer to paste into the code.
+    const listText = blockedList.map(item => `'${item.id}'`).join(',\n');
+    
+    navigator.clipboard.writeText(listText);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-[fadeIn_0.2s_ease-out]">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b border-gray-100">
+          <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+            <span className="text-2xl">🚫</span> لیست ارزهای مسدود شده (Blocked)
+          </h2>
+          <button onClick={onClose} className="p-2 text-gray-400 hover:text-red-500 rounded-lg hover:bg-gray-100 transition-colors">
+            ✕
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="flex-grow overflow-y-auto p-4 custom-scrollbar">
+           <p className="text-sm text-gray-500 mb-4 bg-red-50 p-3 rounded-lg border border-red-100 leading-relaxed text-justify">
+             این لیست شامل تمام ارزهایی است که شما به صورت دستی مسدود کرده‌اید. با توجه به عدم امکان ذخیره‌سازی دائمی آنلاین، می‌توانید این لیست را کپی کرده و برای توسعه‌دهنده ارسال کنید تا به صورت دائمی از سایت حذف شوند.
+           </p>
+           {blockedList.length === 0 ? (
+               <div className="text-center py-10 text-gray-400">
+                   هیچ ارزی مسدود نشده است.
+               </div>
+           ) : (
+               <table className="w-full text-right text-sm">
+                 <thead className="bg-gray-50 text-gray-600 font-bold sticky top-0 z-10 bg-white">
+                   <tr>
+                     <th className="px-3 py-2 border-b">شناسه (ID)</th>
+                     <th className="px-3 py-2 border-b">نام</th>
+                     <th className="px-3 py-2 border-b">نماد</th>
+                   </tr>
+                 </thead>
+                 <tbody className="divide-y divide-gray-100">
+                   {blockedList.map((item) => (
+                     <tr key={item.id} className="hover:bg-gray-50">
+                       <td className="px-3 py-2 text-gray-800 font-mono select-all font-bold" dir="ltr">{item.id}</td>
+                       <td className="px-3 py-2 text-gray-600">{item.name}</td>
+                       <td className="px-3 py-2 text-gray-500 uppercase">{item.symbol}</td>
+                     </tr>
+                   ))}
+                 </tbody>
+               </table>
+           )}
+        </div>
+
+        {/* Footer */}
+        <div className="p-4 border-t border-gray-100 bg-gray-50 rounded-b-xl flex justify-between items-center">
+           <span className="text-sm text-gray-500">تعداد: {blockedList.length}</span>
+           <button 
+             onClick={handleCopyList}
+             disabled={blockedList.length === 0}
+             className={`px-6 py-2.5 rounded-lg font-bold shadow-sm transition-all flex items-center gap-2 ${copied ? 'bg-green-600 text-white' : 'bg-red-600 text-white hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed'}`}
+           >
+             {copied ? (
+               <><span>✓</span> کپی شد</>
+             ) : (
+               <><span>📋</span> کپی لیست برای ارسال</>
+             )}
+           </button>
+        </div>
+      </div>
+    </div>
   );
 };
 
@@ -340,10 +439,24 @@ const LazyWidget = ({ children }: { children?: React.ReactNode }) => {
 
 const App: React.FC = () => {
   // --- State ---
-  const [activeCategory, setActiveCategory] = useState<Category>('CRYPTO');
+  // Load initial states from localStorage
+  const [activeCategory, setActiveCategory] = useState<Category>(() => {
+    if (typeof window !== 'undefined') {
+       return (localStorage.getItem(PREF_CATEGORY_KEY) as Category) || 'CRYPTO';
+    }
+    return 'CRYPTO';
+  });
+
   const [viewMode, setViewMode] = useState<ViewMode>('GRID');
   const [isLogScale, setIsLogScale] = useState(true);
-  const [interval, setInterval] = useState("1M");
+  
+  const [interval, setInterval] = useState(() => {
+    if (typeof window !== 'undefined') {
+       return localStorage.getItem(PREF_INTERVAL_KEY) || "1M";
+    }
+    return "1M";
+  });
+
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
   
   // Sorting State
@@ -374,11 +487,21 @@ const App: React.FC = () => {
       return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [gridCols]);
   
+  // Save interval change
+  useEffect(() => {
+      localStorage.setItem(PREF_INTERVAL_KEY, interval);
+  }, [interval]);
+
+  // Save category change
+  useEffect(() => {
+      localStorage.setItem(PREF_CATEGORY_KEY, activeCategory);
+  }, [activeCategory]);
+  
   // Data State
   const [displayedAssets, setDisplayedAssets] = useState<AssetData[]>([]);
+  const [allFetchedAssets, setAllFetchedAssets] = useState<AssetData[]>([]); // Store raw fetched data to lookup names for blocked list
   
   // User Preferences
-  // FIX: Initialize removedIds from localStorage immediately to prevent flicker/reappearance of deleted items
   const [removedIds, setRemovedIds] = useState<Set<string>>(() => {
     if (typeof window !== 'undefined') {
         const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
@@ -401,6 +524,7 @@ const App: React.FC = () => {
   const [user, setUser] = useState<any>(null);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showSymbolList, setShowSymbolList] = useState(false); // Modal State
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -456,7 +580,7 @@ const App: React.FC = () => {
     setCurrentPage(1);
   }, [activeCategory, searchQuery, showFavoritesOnly, viewMode]);
 
-  // Handle Default Timeframe and Sorting
+  // Handle Default Sorting (removed auto-reset of interval)
   useEffect(() => {
       // Reset sort config based on category
       if (activeCategory === 'CRYPTO') {
@@ -466,10 +590,6 @@ const App: React.FC = () => {
       } else if (activeCategory === 'FOREX' || activeCategory === 'STOCKS') {
           setSortConfig({ key: null, direction: 'desc' }); // Default order
       }
-      
-      // Default interval logic
-      setInterval("D");
-
   }, [activeCategory]);
 
   // Scroll top on page change
@@ -509,6 +629,8 @@ const App: React.FC = () => {
         // Apply duplicate filter to static lists too
         let data = processAssets(FOREX_PAIRS);
         
+        setAllFetchedAssets(data);
+
         // In TABLE view, show removed items so they can be unblocked. In GRID view, hide them.
         if (viewMode === 'GRID') {
             data = data.filter(a => !removedIds.has(a.id));
@@ -526,6 +648,8 @@ const App: React.FC = () => {
     if (activeCategory === 'STOCKS') {
         // Apply duplicate filter to static lists too
         let data = processAssets(STOCK_DATA);
+        
+        setAllFetchedAssets(data);
 
         // In TABLE view, show removed items so they can be unblocked. In GRID view, hide them.
         if (viewMode === 'GRID') {
@@ -612,13 +736,17 @@ const App: React.FC = () => {
 
                 setCryptoTotalCount(filtered.length);
                 const start = (currentPage - 1) * pageSize;
-                data = filtered.slice(start, start + pageSize).map((c: any) => ({ ...c, type: 'CRYPTO' }));
+                const rawPageData = filtered.slice(start, start + pageSize).map((c: any) => ({ ...c, type: 'CRYPTO' }));
+                
+                setAllFetchedAssets(rawPageData);
+                data = rawPageData;
 
             // CASE B: Show Favorites Only (Standard Crypto)
             } else if (showFavoritesOnly) {
                 const favIds = Array.from(favorites);
                 if (favIds.length === 0) {
                     setDisplayedAssets([]);
+                    setAllFetchedAssets([]);
                     setCryptoTotalCount(0);
                     setLoading(false);
                     return;
@@ -639,7 +767,10 @@ const App: React.FC = () => {
                 
                 setCryptoTotalCount(filtered.length);
                 const start = (currentPage - 1) * pageSize;
-                data = filtered.slice(start, start + pageSize).map((c: any) => ({ ...c, type: 'CRYPTO' }));
+                const rawPageData = filtered.slice(start, start + pageSize).map((c: any) => ({ ...c, type: 'CRYPTO' }));
+                
+                setAllFetchedAssets(rawPageData);
+                data = rawPageData;
             
             } else {
                 // CASE C: Search Active (Rank or Text) for Standard Crypto
@@ -654,7 +785,10 @@ const App: React.FC = () => {
                     const json = await res.json();
                     
                     const cleaned = processAssets(json);
-                    data = cleaned.filter((c:any) => c.market_cap_rank === rankQuery).map((c: any) => ({ ...c, type: 'CRYPTO' }));
+                    const rawData = cleaned.filter((c:any) => c.market_cap_rank === rankQuery).map((c: any) => ({ ...c, type: 'CRYPTO' }));
+                    
+                    setAllFetchedAssets(rawData);
+                    data = rawData;
                     setCryptoTotalCount(10000); 
 
                 } else if (searchQuery.trim().length > 0) {
@@ -665,6 +799,7 @@ const App: React.FC = () => {
 
                     if (searchCoins.length === 0) {
                         setDisplayedAssets([]);
+                        setAllFetchedAssets([]);
                         setCryptoTotalCount(0);
                         setLoading(false);
                         return;
@@ -681,10 +816,14 @@ const App: React.FC = () => {
                     if (ids) {
                         const marketsRes = await fetch(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids}&order=market_cap_desc&sparkline=false&price_change_percentage=24h,7d,30d,1y`, { signal: controller.signal });
                         const marketsJson = await marketsRes.json();
-                        data = processAssets(marketsJson).map((c: any) => ({ ...c, type: 'CRYPTO' }));
+                        const rawData = processAssets(marketsJson).map((c: any) => ({ ...c, type: 'CRYPTO' }));
+                        
+                        setAllFetchedAssets(rawData);
+                        data = rawData;
                         setCryptoTotalCount(searchCoins.length);
                     } else {
                         data = [];
+                        setAllFetchedAssets([]);
                         setCryptoTotalCount(0);
                     }
 
@@ -695,7 +834,10 @@ const App: React.FC = () => {
                     if (!res.ok) throw new Error("Rate Limit or API Error");
                     const json = await res.json();
                     const cleaned = processAssets(json);
-                    data = cleaned.map((c: any) => ({ ...c, type: 'CRYPTO' }));
+                    const rawData = cleaned.map((c: any) => ({ ...c, type: 'CRYPTO' }));
+                    
+                    setAllFetchedAssets(rawData);
+                    data = rawData;
                     setCryptoTotalCount(10000); 
                 }
             }
@@ -1050,6 +1192,15 @@ const App: React.FC = () => {
 
               {/* Settings Action Buttons */}
               <div className="flex items-center gap-1">
+                 {/* New: Symbol List Button */}
+                <button 
+                    onClick={() => setShowSymbolList(true)} 
+                    title="مشاهده لیست ارزهای مسدود شده"
+                    className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-transparent hover:border-blue-100"
+                >
+                    📜
+                </button>
+
                 <button 
                     onClick={handleSaveLayout} 
                     title="ذخیره چیدمان"
@@ -1675,6 +1826,11 @@ const App: React.FC = () => {
                     </div>
                 </div>
             </>
+        )}
+        
+        {/* Symbol List Modal */}
+        {showSymbolList && (
+            <BlockedListModal blockedIds={removedIds} allAssets={allFetchedAssets} onClose={() => setShowSymbolList(false)} />
         )}
 
       </main>
