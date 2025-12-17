@@ -28,6 +28,8 @@ interface AssetData {
   ath_change_percentage?: number;
   high_24h?: number;
   low_24h?: number;
+  total_supply?: number;
+  circulating_supply?: number;
 }
 
 interface CoinInsight {
@@ -319,7 +321,7 @@ const COIN_INSIGHTS: Record<string, CoinInsight> = {
   'ripple': {
     category: 'پرداخت‌های بین‌المللی',
     utility: 'جایگزین سریع و ارزان برای سیستم سوئیفت بانکی جهت انتقال پول بین مرزی.',
-    outlook: 'پیروزی‌های حقوقی اخیر موقعیت آن را تثبیت کرده است. پتانسیل بالایی در صورت پذیرش توسط بانک‌های مرکزی دارد.'
+    outlook: 'پیروزی‌های حقوقی اخیر موقعیت آن را تثیت کرده است. پتانسیل بالایی در صورت پذیرش توسط بانک‌های مرکزی دارد.'
   },
   'cardano': {
     category: 'قرارداد هوشمند (L1) علمی',
@@ -1141,6 +1143,14 @@ const App: React.FC = () => {
     }).format(value);
   };
 
+  const formatCompactNum = (value?: number) => {
+    if (value === undefined || value === null) return '-';
+    return new Intl.NumberFormat('en-US', {
+        notation: "compact",
+        maximumFractionDigits: 1
+    }).format(value);
+  };
+
   const getTradingViewSymbol = (asset: AssetData) => {
     if (asset.type === 'CRYPTO') {
         if (asset.symbol.toLowerCase() === 'usdt') return 'USDCUSDT';
@@ -1594,54 +1604,74 @@ const App: React.FC = () => {
                             </div>
                         )}
 
-                        {/* 3. Detailed Stats */}
+                        {/* 3. Detailed Stats (Responsive 2x2 or 4x1) */}
                         {hasDetails ? (
-                            <div className="grid grid-cols-3 gap-x-4 gap-y-2 p-4 text-base bg-white border-b border-gray-100 text-gray-600 shrink-0 h-[140px]">
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3 p-4 bg-white border-b border-gray-100 text-gray-600 shrink-0 min-h-[160px]">
                                 {/* Column 1: Historical Changes */}
-                                <div className="flex flex-col gap-1.5">
+                                <div className="flex flex-col gap-1.5 text-sm">
                                     <div className="flex justify-between">
-                                        <span className="font-semibold text-gray-600">7d:</span>
+                                        <span className="font-semibold text-gray-500">7d:</span>
                                         <span className={`font-bold ${getPercentClass(asset.price_change_percentage_7d_in_currency)}`}>{fmtPct(asset.price_change_percentage_7d_in_currency)}</span>
                                     </div>
                                     <div className="flex justify-between">
-                                        <span className="font-semibold text-gray-600">30d:</span>
+                                        <span className="font-semibold text-gray-500">30d:</span>
                                         <span className={`font-bold ${getPercentClass(asset.price_change_percentage_30d_in_currency)}`}>{fmtPct(asset.price_change_percentage_30d_in_currency)}</span>
                                     </div>
                                     <div className="flex justify-between">
-                                        <span className="font-semibold text-gray-600">1y:</span>
+                                        <span className="font-semibold text-gray-500">1y:</span>
                                         <span className={`font-bold ${getPercentClass(asset.price_change_percentage_1y_in_currency)}`}>{fmtPct(asset.price_change_percentage_1y_in_currency)}</span>
                                     </div>
                                 </div>
 
                                 {/* Column 2: ATH Data */}
-                                <div className="flex flex-col gap-1.5 border-l border-gray-100 pl-3">
+                                <div className="flex flex-col gap-1.5 border-r sm:border-r-0 sm:border-l border-gray-100 pr-3 sm:pr-0 sm:pl-3 text-sm">
                                     <div className="flex justify-between" title="All Time High Price">
-                                        <span className="font-semibold text-gray-600">ATH:</span>
+                                        <span className="font-semibold text-gray-500">ATH:</span>
                                         <span className="font-bold text-gray-700">{formatCompact(asset.ath)}</span>
                                     </div>
                                     <div className="flex justify-between" title="Down from ATH">
-                                        <span className="font-semibold text-gray-600">Drop:</span>
+                                        <span className="font-semibold text-gray-500">Drop:</span>
                                         <span className="font-bold text-red-500">{fmtPct(asset.ath_change_percentage)}</span>
                                     </div>
                                     <div className="flex justify-between" title="Needed to reach ATH">
-                                        <span className="font-semibold text-gray-600">To ATH:</span>
+                                        <span className="font-semibold text-gray-500">To ATH:</span>
                                         <span className="font-bold text-green-600">+{toAth.toFixed(0)}%</span>
                                     </div>
                                 </div>
 
                                 {/* Column 3: Market Data */}
-                                <div className="flex flex-col gap-1.5 border-l border-gray-100 pl-3">
+                                <div className="flex flex-col gap-1.5 border-l border-gray-100 pl-3 text-sm">
                                      <div className="flex justify-between">
-                                        <span className="font-semibold text-gray-600">Cap:</span>
+                                        <span className="font-semibold text-gray-500">Cap:</span>
                                         <span className="font-bold text-gray-700">{formatCompact(asset.market_cap)}</span>
                                     </div>
                                     <div className="flex justify-between">
-                                        <span className="font-semibold text-gray-600">Vol:</span>
+                                        <span className="font-semibold text-gray-500">Vol:</span>
                                         <span className="font-bold text-gray-700">{formatCompact(asset.total_volume)}</span>
                                     </div>
-                                    <div className="flex justify-between" title={`H: ${formatCurrency(asset.high_24h)} L: ${formatCurrency(asset.low_24h)}`}>
-                                        <span className="font-semibold text-gray-600">H/L:</span>
-                                        <span className="font-bold text-gray-500">Info</span>
+                                    <div className="flex justify-between">
+                                        <span className="font-semibold text-gray-500">H/L:</span>
+                                        <span className="font-bold text-gray-400">Stats</span>
+                                    </div>
+                                </div>
+
+                                {/* Column 4: Supply Data */}
+                                <div className="flex flex-col gap-1.5 border-l border-gray-100 pl-3 text-sm">
+                                    <div className="flex justify-between" title="Total Supply">
+                                        <span className="font-semibold text-gray-500">Total:</span>
+                                        <span className="font-bold text-gray-700">{formatCompactNum(asset.total_supply)}</span>
+                                    </div>
+                                    <div className="flex justify-between" title="Circulating Supply">
+                                        <span className="font-semibold text-gray-500">Circ:</span>
+                                        <span className="font-bold text-gray-700">{formatCompactNum(asset.circulating_supply)}</span>
+                                    </div>
+                                    <div className="flex justify-between" title="Circulating Percentage">
+                                        <span className="font-semibold text-gray-500">Circ %:</span>
+                                        <span className="font-bold text-blue-600">
+                                            {asset.total_supply && asset.circulating_supply 
+                                                ? ((asset.circulating_supply / asset.total_supply) * 100).toFixed(1) + '%'
+                                                : '-'}
+                                        </span>
                                     </div>
                                 </div>
                             </div>
@@ -1656,14 +1686,14 @@ const App: React.FC = () => {
 
                         {/* Action Buttons */}
                         {hasDetails && (
-                            <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 flex flex-col gap-2 shrink-0">
+                            <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 flex flex-col gap-3 shrink-0">
                                 {/* External Links */}
                                 <div className="flex items-center gap-2">
                                     <a 
                                         href={`https://www.coingecko.com/en/coins/${asset.id}`} 
                                         target="_blank" 
                                         rel="noopener noreferrer"
-                                        className="flex-1 text-center py-1.5 rounded bg-white border border-gray-200 text-[10px] md:text-xs font-bold text-gray-600 hover:bg-green-50 hover:text-green-700 hover:border-green-200 transition-all shadow-sm truncate"
+                                        className="flex-1 text-center py-2 rounded bg-white border border-gray-200 text-xs font-bold text-gray-600 hover:bg-green-50 hover:text-green-700 hover:border-green-200 transition-all shadow-sm truncate"
                                         title="مشاهده در CoinGecko"
                                     >
                                         CoinGecko
@@ -1672,7 +1702,7 @@ const App: React.FC = () => {
                                         href={`https://coinmarketcap.com/currencies/${asset.name.trim().toLowerCase().replace(/\s+/g, '-')}`} 
                                         target="_blank" 
                                         rel="noopener noreferrer"
-                                        className="flex-1 text-center py-1.5 rounded bg-white border border-gray-200 text-[10px] md:text-xs font-bold text-gray-600 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-200 transition-all shadow-sm truncate"
+                                        className="flex-1 text-center py-2 rounded bg-white border border-gray-200 text-xs font-bold text-gray-600 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-200 transition-all shadow-sm truncate"
                                         title="مشاهده در CoinMarketCap"
                                     >
                                         CoinMarketCap
@@ -1681,37 +1711,37 @@ const App: React.FC = () => {
                                         href="https://app.cryptopective.com/" 
                                         target="_blank" 
                                         rel="noopener noreferrer"
-                                        className="flex-1 text-center py-1.5 rounded bg-blue-600 border border-blue-600 text-[10px] md:text-xs font-bold text-white hover:bg-blue-700 hover:border-blue-700 transition-all shadow-sm truncate"
+                                        className="flex-1 text-center py-2 rounded bg-blue-600 border border-blue-600 text-xs font-bold text-white hover:bg-blue-700 hover:border-blue-700 transition-all shadow-sm truncate"
                                         title="تحلیل در CryptoPective"
                                     >
                                         CryptoPective
                                     </a>
                                 </div>
                                 {/* Chart Toggle */}
-                                <div className="flex bg-gray-100 rounded-lg p-0.5 w-full">
+                                <div className="flex bg-gray-100 rounded-lg p-1 w-full">
                                     <button 
                                         onClick={() => toggleChartMode(asset.id, 'PRICE')}
-                                        className={`flex-1 py-1 rounded-md text-xs font-bold transition-all ${currentChartMode === 'PRICE' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                                        className={`flex-1 py-1.5 rounded-md text-sm font-bold transition-all ${currentChartMode === 'PRICE' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                                     >
-                                        قیمت (Price)
+                                        قیمت
                                     </button>
                                     <button 
                                         onClick={() => toggleChartMode(asset.id, 'MCAP')}
-                                        className={`flex-1 py-1 rounded-md text-xs font-bold transition-all ${currentChartMode === 'MCAP' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                                        className={`flex-1 py-1.5 rounded-md text-sm font-bold transition-all ${currentChartMode === 'MCAP' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                                     >
                                         ارزش بازار
                                     </button>
                                     <button 
                                         onClick={() => toggleChartMode(asset.id, 'BOTH')}
-                                        className={`flex-1 py-1 rounded-md text-xs font-bold transition-all ${currentChartMode === 'BOTH' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                                        className={`flex-1 py-1.5 rounded-md text-sm font-bold transition-all ${currentChartMode === 'BOTH' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                                     >
                                         همزمان
                                     </button>
                                     <button 
                                         onClick={() => handleInfoClick(asset)}
-                                        className={`flex-1 py-1 rounded-md text-xs font-bold transition-all ${currentChartMode === 'INFO' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-100'}`}
+                                        className={`flex-1 py-1.5 rounded-md text-sm font-bold transition-all ${currentChartMode === 'INFO' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-100'}`}
                                     >
-                                        تحلیل (Info)
+                                        تحلیل
                                     </button>
                                 </div>
                             </div>
@@ -1940,13 +1970,13 @@ const App: React.FC = () => {
                                                                     </button>
                                                                     <button 
                                                                         onClick={(e) => { e.stopPropagation(); toggleChartMode(asset.id, 'MCAP'); }}
-                                                                        className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${currentChartMode === 'MCAP' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-100'}`}
+                                                                        className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${currentChartMode === 'MCAP' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-100'}`}
                                                                     >
                                                                         ارزش بازار
                                                                     </button>
                                                                     <button 
                                                                         onClick={(e) => { e.stopPropagation(); toggleChartMode(asset.id, 'BOTH'); }}
-                                                                        className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${currentChartMode === 'BOTH' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-100'}`}
+                                                                        className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${currentChartMode === 'BOTH' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-100'}`}
                                                                     >
                                                                         همزمان
                                                                     </button>
