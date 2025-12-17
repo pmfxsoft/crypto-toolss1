@@ -218,7 +218,78 @@ const BLOCKED_IDS = new Set([
   'atomone',
   'bridged-wrapped-ether-starkgate',
   'minidoge-5',
-  'stargate-bridged-usdc'
+  'stargate-bridged-usdc',
+  'dfdv-staked-sol',
+  'matrixdock-gold',
+  'omni-network',
+  'mindwavedao',
+  'usd-coin-ethereum-bridged',
+  'kinetiq-earn-vault',
+  'stargate-bridged-weth',
+  'fluid-wrapped-staked-eth',
+  'usdx',
+  'onyc',
+  'fx-usd-saving',
+  'hastra-wrapped-ylds',
+  'restaked-swell-eth',
+  'helder',
+  'sui-bridged-wbtc-sui',
+  'bim-2',
+  'vaultbridge-bridged-usdc-katana',
+  'midas-msyrupusdp',
+  'coco-2',
+  'wrapped-cro',
+  'escoin-token',
+  'steakhouse-eth-morpho-vault',
+  'zedxion',
+  'fulcrom',
+  'sui-bridged-usdt-sui',
+  'infrared-bera',
+  'usdkg',
+  'lcx',
+  'project-galaxy',
+  'marsmi',
+  'infrared-finance',
+  'veraone',
+  'usd',
+  'mountain-protocol-usdm',
+  'tether-gold-tokens',
+  'ronin-bridged-weth-ronin',
+  'firelight-staked-xrp',
+  'unit-plasma',
+  'hex-trust-usdx',
+  'nkyc-token',
+  'bridged-wrapped-bitcoin-starkgate',
+  'ridges-ai',
+  'sui-bridged-ether-sui',
+  'rserg',
+  'liquity-bold-2',
+  'glidr',
+  'solv-protocol-solvbtc-jupiter',
+  'atoshi',
+  'moonwell-flagship-usdc-morpho-vault',
+  'austin-capitals',
+  'cjournal-2',
+  'proprietary-trading-network',
+  'ondo-u-s-dollar-token',
+  'anvil',
+  'kelp-gain',
+  'usd-coin-avalanche-bridged-usdc-e',
+  'noble-dollar-usdn',
+  'amnis-aptos',
+  'mezo-wrapped-btc',
+  'coinbase-wrapped-xrp',
+  'targon',
+  'luxxcoin',
+  'socean-staked-sol',
+  'wrapped-bitcoin-pulsechain',
+  'botxcoin',
+  'hyperbeat-usdt',
+  'btu-protocol',
+  'pumpmeme',
+  'gogopool-ggavax',
+  'snowbank',
+  'ventuals-vhype'
 ]);
 
 const BLOCKED_SYMBOLS = new Set(['usdt', 'usdc', 'dai', 'fdusd', 'usde', 'tusd', 'usdd', 'busd', 'wsteth']);
@@ -705,6 +776,7 @@ const App: React.FC = () => {
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
+  const [pageInput, setPageInput] = useState('1'); // Input state
   const [pageSize, setPageSize] = useState(15);
   const [cryptoTotalCount, setCryptoTotalCount] = useState(10000); 
 
@@ -712,6 +784,11 @@ const App: React.FC = () => {
   const mainContentRef = useRef<HTMLDivElement>(null);
 
   // --- Effects ---
+
+  // Sync pageInput with currentPage
+  useEffect(() => {
+      setPageInput(String(currentPage));
+  }, [currentPage]);
 
   // Load Preferences (Favorites only, RemovedIds is now lazy-loaded in useState)
   useEffect(() => {
@@ -1989,9 +2066,37 @@ const App: React.FC = () => {
                             قبلی
                         </button>
                         
-                        <div className="px-5 py-2 text-base font-semibold text-blue-600 bg-blue-50 rounded">
-                            صفحه {currentPage} از {totalPages || 1}
-                        </div>
+                        <form 
+                            onSubmit={(e) => {
+                                e.preventDefault();
+                                const val = parseInt(pageInput);
+                                const maxPage = Math.ceil(cryptoTotalCount / pageSize);
+                                if (!isNaN(val) && val >= 1 && val <= maxPage) {
+                                    setCurrentPage(val);
+                                } else {
+                                    setPageInput(String(currentPage));
+                                }
+                            }}
+                            className="flex items-center gap-2 px-3 py-1.5 text-base font-semibold text-blue-600 bg-blue-50 rounded"
+                        >
+                            <span className="hidden sm:inline">صفحه</span>
+                            <input 
+                                type="number" 
+                                value={pageInput}
+                                onChange={(e) => setPageInput(e.target.value)}
+                                onBlur={() => {
+                                    const val = parseInt(pageInput);
+                                    const maxPage = Math.ceil(cryptoTotalCount / pageSize);
+                                    if (!isNaN(val) && val >= 1 && val <= maxPage) {
+                                        setCurrentPage(val);
+                                    } else {
+                                        setPageInput(String(currentPage));
+                                    }
+                                }}
+                                className="w-12 text-center bg-white border border-blue-200 rounded px-1 py-0.5 text-gray-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                            />
+                            <span className="whitespace-nowrap">از {totalPages || 1}</span>
+                        </form>
 
                         <button 
                             onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))} 
