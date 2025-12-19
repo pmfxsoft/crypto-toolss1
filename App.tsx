@@ -765,9 +765,8 @@ const App: React.FC = () => {
   
   // New: Multiple Favorites Lists
   // Structure: { "List Name": Set(["btc", "eth"]) }
-  const [favLists, setFavLists] = useState<Record<string, Set<string>>>({ "لیست اصلی": new Set<string>() });
+  const [favLists, setFavLists] = useState<Record<string, Set<string>>>({ "لیست اصلی": new Set() });
   const [activeFavList, setActiveFavList] = useState<string>("لیست اصلی");
-  const [openFavMenuId, setOpenFavMenuId] = useState<string | null>(null);
   
   // Fetch Config
   const [loading, setLoading] = useState(false);
@@ -867,18 +866,6 @@ const App: React.FC = () => {
     return () => unsubscribeAuth();
   }, []);
 
-  // Close favorites menu when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      // Logic to check if click is inside menu
-      if (openFavMenuId && !(event.target as Element).closest('.fav-menu-container')) {
-         setOpenFavMenuId(null);
-      }
-    };
-    document.addEventListener('click', handleClickOutside);
-    return () => document.removeEventListener('click', handleClickOutside);
-  }, [openFavMenuId]);
-
   // Reset pagination on category change or search
   useEffect(() => {
     setCurrentPage(1);
@@ -931,7 +918,7 @@ const App: React.FC = () => {
 
   // Derived state for easy access to current favorites set
   const currentFavoritesSet = useMemo(() => {
-      return favLists[activeFavList] || new Set<string>();
+      return favLists[activeFavList] || new Set();
   }, [favLists, activeFavList]);
 
   // --- Data Fetching Strategy ---
@@ -1265,13 +1252,13 @@ const App: React.FC = () => {
     });
   };
 
-  const toggleAssetInList = (listName: string, assetId: string) => {
+  const toggleFavorite = (id: string) => {
       setFavLists((prev: Record<string, Set<string>>) => {
-          const currentSet = new Set(prev[listName] || []);
-          if (currentSet.has(assetId)) currentSet.delete(assetId);
-          else currentSet.add(assetId);
+          const currentSet = new Set(prev[activeFavList] || []);
+          if (currentSet.has(id)) currentSet.delete(id);
+          else currentSet.add(id);
           
-          const newLists = { ...prev, [listName]: currentSet };
+          const newLists = { ...prev, [activeFavList]: currentSet };
           
           // Persist
           const serialized: Record<string, string[]> = {};
@@ -1371,7 +1358,7 @@ const App: React.FC = () => {
   const handleExportBackup = () => {
     const serializedFavs: Record<string, string[]> = {};
     for (const [key, val] of Object.entries(favLists)) {
-        serializedFavs[key] = Array.from(val as Set<string>);
+        serializedFavs[key] = Array.from(val);
     }
     const data = { 
         removedCoinIds: Array.from(removedIds), 
@@ -1441,11 +1428,6 @@ const App: React.FC = () => {
       const prompt = `حلیل جامع و پیش‌بینی آینده ارز دیجیتال ${asset.name} (${asset.symbol}) چیست؟آمار دقیق توکن‌های در حال گردش و توکن‌های کلیدر توکن های در حال گردش ،تحلیل جامع پروژه: توکن چیست و چه کاربردی دارد؟،پیش‌بینی آینده توکن: چه قیمتی و چه کاربردی؟`;
       navigator.clipboard.writeText(prompt).catch(() => {});
       window.open("https://gemini.google.com/", "_blank");
-  };
-  
-  const toggleFavMenu = (e: React.MouseEvent, id: string) => {
-      e.stopPropagation();
-      setOpenFavMenuId(prev => prev === id ? null : id);
   };
   
   const cardHeightClass = 'h-[calc(100vh-140px)] min-h-[500px]';
@@ -1761,10 +1743,10 @@ const App: React.FC = () => {
                         id={`card-${asset.id}`}
                         key={asset.id} 
                         style={{ contentVisibility: 'auto', containIntrinsicSize: '1px 500px' }}
-                        className={`bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col relative ${cardHeightClass} transition-all hover:shadow-md`}
+                        className={`bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col ${cardHeightClass} transition-all hover:shadow-md`}
                       >
                         {/* 1. Header */}
-                        <div className="px-4 py-3 border-b border-gray-100 flex justify-between items-center bg-white shrink-0 rounded-t-xl">
+                        <div className="px-4 py-3 border-b border-gray-100 flex justify-between items-center bg-white shrink-0">
                           <div className="flex items-center gap-3 overflow-hidden">
                             <img src={getImage(asset)} alt={asset.name} className="w-10 h-10 rounded-full object-contain flex-shrink-0" loading="lazy" onError={(e) => (e.currentTarget.style.display = 'none')} />
                             <div className="min-w-0">
@@ -1784,40 +1766,11 @@ const App: React.FC = () => {
                             </div>
                           </div>
                           
-                          <div className="flex items-center flex-shrink-0 gap-1 relative fav-menu-container">
-                            {openFavMenuId === asset.id && (
-                                <div className="absolute top-10 left-0 z-50 bg-white rounded-xl shadow-xl border border-gray-100 p-3 min-w-[200px] animate-[fadeIn_0.1s_ease-out] text-right">
-                                    <div className="text-xs font-bold text-gray-400 mb-2 px-1">ذخیره در لیست‌های:</div>
-                                    <div className="flex flex-col gap-1 max-h-[200px] overflow-y-auto custom-scrollbar">
-                                        {Object.keys(favLists).map(listName => {
-                                            const isChecked = favLists[listName]?.has(asset.id);
-                                            return (
-                                                <label key={listName} className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-50 rounded cursor-pointer transition-colors justify-start">
-                                                    <input 
-                                                        type="checkbox" 
-                                                        checked={isChecked}
-                                                        onChange={() => toggleAssetInList(listName, asset.id)}
-                                                        className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4 border-gray-300"
-                                                    />
-                                                    <span className={`text-sm ${isChecked ? 'text-gray-800 font-bold' : 'text-gray-600'}`}>{listName}</span>
-                                                </label>
-                                            );
-                                        })}
-                                    </div>
-                                    <div className="border-t border-gray-100 mt-2 pt-2 text-center">
-                                        <button 
-                                            onClick={(e) => { e.stopPropagation(); setShowAddListInput(true); setOpenFavMenuId(null); }}
-                                            className="text-xs text-blue-600 hover:text-blue-800 font-bold w-full"
-                                        >
-                                            + لیست جدید
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
+                          <div className="flex items-center flex-shrink-0 gap-1">
                             <button 
-                              onClick={(e) => toggleFavMenu(e, asset.id)}
+                              onClick={() => toggleFavorite(asset.id)}
                               className={`p-2 rounded-lg hover:bg-gray-100 transition-colors ${isFav ? 'text-yellow-400' : 'text-gray-300'}`}
-                              title="مدیریت علاقه‌مندی‌ها"
+                              title={isFav ? "حذف از لیست فعلی" : "افزودن به لیست فعلی"}
                             >
                                <span className="text-2xl">★</span>
                             </button>
@@ -2010,7 +1963,7 @@ const App: React.FC = () => {
                         )}
 
                         {/* 4. Chart or Info Content */}
-                        <div className="flex-grow bg-white relative w-full h-full min-h-0 rounded-b-xl overflow-hidden">
+                        <div className="flex-grow bg-white relative w-full h-full min-h-0">
                           {currentChartMode === 'INFO' ? (
                             <div className="p-6 h-full overflow-y-auto custom-scrollbar bg-white">
                                 <div className="flex flex-col gap-6">
@@ -2045,129 +1998,266 @@ const App: React.FC = () => {
                                     )}
                                 </div>
                             </div>
-                          ) : (
-                            <div className="w-full h-full">
-                                {currentChartMode === 'BOTH' ? (
-                                    <div className="flex flex-col h-full">
-                                        <div className="h-1/2 border-b border-gray-100 relative">
-                                            <LazyWidget>
-                                                <TradingViewWidget isLogScale={isLogScale} symbol={getTradingViewSymbol(asset)} interval={interval} />
-                                            </LazyWidget>
-                                        </div>
-                                        <div className="h-1/2 relative">
-                                            <LazyWidget>
-                                                <TradingViewWidget isLogScale={isLogScale} symbol={`CRYPTOCAP:${asset.symbol.toUpperCase()}`} interval={interval} />
-                                            </LazyWidget>
-                                        </div>
+                          ) : currentChartMode === 'BOTH' ? (
+                            <div className="flex flex-col md:flex-row h-full w-full">
+                                <div className="h-1/2 w-full md:h-full md:w-1/2 border-b md:border-b-0 md:border-r border-gray-200 relative">
+                                    <div className="absolute top-2 left-2 z-10 bg-white/90 px-2 py-0.5 rounded text-[10px] font-bold text-gray-500 shadow-sm pointer-events-none border border-gray-100">
+                                        قیمت (Price)
                                     </div>
-                                ) : (
                                     <LazyWidget>
                                         <TradingViewWidget 
-                                            isLogScale={isLogScale} 
-                                            symbol={tvSymbol} 
-                                            interval={interval} 
+                                            symbol={getTradingViewSymbol(asset)} 
+                                            isLogScale={isLogScale}
+                                            interval={interval}
                                         />
                                     </LazyWidget>
-                                )}
+                                </div>
+                                <div className="h-1/2 w-full md:h-full md:w-1/2 relative">
+                                    <div className="absolute top-2 left-2 z-10 bg-white/90 px-2 py-0.5 rounded text-[10px] font-bold text-gray-500 shadow-sm pointer-events-none border border-gray-100">
+                                         ارزش بازار (Market Cap)
+                                    </div>
+                                    <LazyWidget>
+                                        <TradingViewWidget 
+                                            symbol={`CRYPTOCAP:${asset.symbol.toUpperCase()}`} 
+                                            isLogScale={isLogScale}
+                                            interval={interval}
+                                        />
+                                    </LazyWidget>
+                                </div>
                             </div>
+                          ) : (
+                              <LazyWidget>
+                                  <TradingViewWidget 
+                                    symbol={tvSymbol} 
+                                    isLogScale={isLogScale}
+                                    interval={interval}
+                                  />
+                              </LazyWidget>
                           )}
                         </div>
                       </div>
-                    );
-                  })}
+                    )})}
                   </div>
                )}
 
+               {/* --- TABLE VIEW (CoinGecko Style) --- */}
                {viewMode === 'TABLE' && (
-                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto min-h-[500px]">
-                      <table className="w-full text-right text-sm">
-                        <thead className="bg-gray-50 text-gray-600 font-bold border-b border-gray-200">
-                           <tr>
-                             <th className="px-4 py-3 cursor-pointer whitespace-nowrap" onClick={() => handleSort('market_cap_rank')}># {getSortIndicator('market_cap_rank')}</th>
-                             <th className="px-4 py-3 cursor-pointer whitespace-nowrap" onClick={() => handleSort('name')}>نام ارز {getSortIndicator('name')}</th>
-                             <th className="px-4 py-3 cursor-pointer whitespace-nowrap" onClick={() => handleSort('current_price')}>قیمت {getSortIndicator('current_price')}</th>
-                             <th className="px-4 py-3 cursor-pointer whitespace-nowrap" onClick={() => handleSort('price_change_percentage_24h')}>تغییر 24h {getSortIndicator('price_change_percentage_24h')}</th>
-                             <th className="px-4 py-3 cursor-pointer whitespace-nowrap" onClick={() => handleSort('market_cap')}>ارزش بازار {getSortIndicator('market_cap')}</th>
-                             <th className="px-4 py-3 cursor-pointer whitespace-nowrap" onClick={() => handleSort('total_volume')}>حجم معاملات {getSortIndicator('total_volume')}</th>
-                             <th className="px-4 py-3 whitespace-nowrap">عملیات</th>
-                           </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                          {sortedAssets.map((asset) => {
-                              const isFav = currentFavoritesSet.has(asset.id);
-                              return (
-                                <tr key={asset.id} className="hover:bg-gray-50 transition-colors relative">
-                                  <td className="px-4 py-3 font-mono text-gray-500">{asset.market_cap_rank || '-'}</td>
-                                  <td className="px-4 py-3">
-                                      <div className="flex items-center gap-2">
-                                          <img src={getImage(asset)} alt={asset.name} className="w-6 h-6 rounded-full" />
-                                          <div className="flex flex-col">
-                                              <span className="font-bold text-gray-800">{asset.symbol.toUpperCase()}</span>
-                                              <span className="text-xs text-gray-500">{asset.name}</span>
-                                          </div>
-                                      </div>
-                                  </td>
-                                  <td className="px-4 py-3 font-medium text-gray-700">{formatCurrency(asset.current_price)}</td>
-                                  <td className={`px-4 py-3 font-bold dir-ltr text-right ${getPercentClass(asset.price_change_percentage_24h)}`}>
-                                      {fmtPct(asset.price_change_percentage_24h)}
-                                  </td>
-                                  <td className="px-4 py-3 text-gray-600">{formatCompact(asset.market_cap)}</td>
-                                  <td className="px-4 py-3 text-gray-600">{formatCompact(asset.total_volume)}</td>
-                                  <td className="px-4 py-3">
-                                      <div className="flex items-center gap-2 relative fav-menu-container">
-                                          
-                                          {/* Popup Menu */}
-                                          {openFavMenuId === asset.id && (
-                                              <div className="absolute right-8 top-0 z-50 bg-white rounded-xl shadow-xl border border-gray-100 p-3 min-w-[200px] animate-[fadeIn_0.1s_ease-out] text-right">
-                                                  <div className="text-xs font-bold text-gray-400 mb-2 px-1">ذخیره در لیست‌های:</div>
-                                                  <div className="flex flex-col gap-1 max-h-[200px] overflow-y-auto custom-scrollbar">
-                                                      {Object.keys(favLists).map(listName => {
-                                                          const isChecked = favLists[listName]?.has(asset.id);
-                                                          return (
-                                                              <label key={listName} className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-50 rounded cursor-pointer transition-colors justify-start">
-                                                                  <input 
-                                                                      type="checkbox" 
-                                                                      checked={isChecked}
-                                                                      onChange={() => toggleAssetInList(listName, asset.id)}
-                                                                      className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4 border-gray-300"
-                                                                  />
-                                                                  <span className={`text-sm ${isChecked ? 'text-gray-800 font-bold' : 'text-gray-600'}`}>{listName}</span>
-                                                              </label>
-                                                          );
-                                                      })}
-                                                  </div>
-                                                  <div className="border-t border-gray-100 mt-2 pt-2 text-center">
-                                                      <button 
-                                                          onClick={(e) => { e.stopPropagation(); setShowAddListInput(true); setOpenFavMenuId(null); }}
-                                                          className="text-xs text-blue-600 hover:text-blue-800 font-bold w-full"
-                                                      >
-                                                          + لیست جدید
-                                                      </button>
-                                                  </div>
-                                              </div>
-                                          )}
-
-                                          <button 
-                                              onClick={(e) => toggleFavMenu(e, asset.id)}
-                                              className={`text-lg transition-colors p-1 rounded hover:bg-gray-100 ${isFav ? 'text-yellow-400' : 'text-gray-300 hover:text-yellow-400'}`}
-                                          >
-                                              ★
-                                          </button>
-                                          <button 
-                                              onClick={() => removeAsset(asset.id)}
-                                              className="text-gray-300 hover:text-red-500 transition-colors p-1 rounded hover:bg-red-50"
-                                          >
-                                              ✕
-                                          </button>
-                                      </div>
-                                  </td>
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-right text-base">
+                            <thead className="bg-gray-50 text-gray-600 font-bold text-sm uppercase border-b border-gray-200 sticky top-0 z-10 select-none">
+                                <tr>
+                                    <th 
+                                      className="px-4 py-4 whitespace-nowrap w-20 cursor-pointer hover:bg-gray-100 transition-colors group"
+                                      onClick={() => handleSort('market_cap_rank')}
+                                      title="مرتب‌سازی بر اساس رنک (حالت پیش‌فرض)"
+                                    >
+                                      # {getSortIndicator('market_cap_rank')}
+                                    </th>
+                                    <th className="px-4 py-4 text-right">نام ارز</th>
+                                    <th className="px-4 py-4 text-right">قیمت</th>
+                                    <th 
+                                      className="px-4 py-4 text-right cursor-pointer hover:bg-gray-100 transition-colors group"
+                                      onClick={() => handleSort('price_change_percentage_24h')}
+                                    >
+                                      24h {getSortIndicator('price_change_percentage_24h')}
+                                    </th>
+                                    <th 
+                                      className="px-4 py-4 text-right cursor-pointer hover:bg-gray-100 transition-colors group"
+                                      onClick={() => handleSort('price_change_percentage_7d_in_currency')}
+                                    >
+                                      7d {getSortIndicator('price_change_percentage_7d_in_currency')}
+                                    </th>
+                                    <th 
+                                      className="px-4 py-4 text-right cursor-pointer hover:bg-gray-100 transition-colors group"
+                                      onClick={() => handleSort('market_cap')}
+                                    >
+                                      ارزش بازار {getSortIndicator('market_cap')}
+                                    </th>
+                                    {/* Potential Column for Crypto Only */}
+                                    <th className="px-4 py-4 text-right">پتانسیل ({calcInput}$)</th>
+                                    <th className="px-4 py-4 text-center w-24 bg-gray-100 text-gray-700 border-r">مسدودی</th>
                                 </tr>
-                              );
-                          })}
-                        </tbody>
-                      </table>
-                  </div>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                                {sortedAssets.map((asset) => {
+                                    const isBlocked = removedIds.has(asset.id);
+                                    const isExpanded = expandedRowId === asset.id;
+                                    const currentChartMode = chartModes[asset.id] || 'PRICE';
+                                    const tvSymbol = currentChartMode === 'PRICE' 
+                                        ? getTradingViewSymbol(asset) 
+                                        : `CRYPTOCAP:${asset.symbol.toUpperCase()}`;
+                                    const insight = COIN_INSIGHTS[asset.id];
+                                    const isFav = currentFavoritesSet.has(asset.id);
+                                    
+                                    // Investment Potential Calculation
+                                    const investment = parseFloat(calcInput) || 0;
+                                    const potentialValue = (asset.ath && asset.current_price)
+                                        ? (investment / asset.current_price) * asset.ath
+                                        : 0;
+                                    const multiplier = (asset.ath && asset.current_price)
+                                        ? (asset.ath / asset.current_price)
+                                        : 0;
+                                    
+                                    // Row styling: active state for expanded row
+                                    const rowClass = isBlocked 
+                                        ? "bg-red-50 hover:bg-red-100 transition-colors border-b border-gray-100" 
+                                        : isExpanded
+                                            ? "bg-blue-50 border-b-0 border-gray-100 cursor-pointer"
+                                            : "bg-white hover:bg-gray-50 transition-colors border-b border-gray-100 cursor-pointer group";
+
+                                    return (
+                                        <React.Fragment key={asset.id}>
+                                            <tr 
+                                                className={rowClass}
+                                                onClick={(e) => {
+                                                    if ((e.target as HTMLElement).closest('.no-click')) return;
+                                                    setExpandedRowId(prev => prev === asset.id ? null : asset.id);
+                                                }}
+                                            >
+                                                <td className="px-4 py-5 whitespace-nowrap text-gray-500 font-medium text-lg no-click cursor-default">
+                                                    <div className="flex items-center gap-3">
+                                                        <button 
+                                                            onClick={(e) => { e.stopPropagation(); toggleFavorite(asset.id); }}
+                                                            className={`text-2xl transition-colors ${isFav ? 'text-yellow-400' : 'text-gray-300 hover:text-yellow-400'}`}
+                                                        >
+                                                            ★
+                                                        </button>
+                                                        <span>
+                                                            {asset.market_cap_rank || '-'}
+                                                        </span>
+                                                    </div>
+                                                </td>
+                                                <td className="px-4 py-5">
+                                                    <div className="flex items-center gap-4">
+                                                        <img src={getImage(asset)} alt={asset.name} className="w-8 h-8 rounded-full" loading="lazy" />
+                                                        <div className="flex flex-col">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="font-bold text-gray-900 text-lg group-hover:text-blue-600 transition-colors">{asset.name}</span>
+                                                                <CopyButton text={asset.symbol.split(':').pop()?.toUpperCase() || ''} />
+                                                            </div>
+                                                            <span className="text-sm text-gray-500 uppercase">{asset.symbol.split(':').pop()}</span>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                                <td className="px-4 py-5 font-bold text-gray-900 text-lg">
+                                                    {formatCurrency(asset.current_price)}
+                                                </td>
+                                                <td className={`px-4 py-5 font-bold text-lg dir-ltr text-right ${getPercentClass(asset.price_change_percentage_24h)}`}>
+                                                    {fmtPct(asset.price_change_percentage_24h)}
+                                                </td>
+                                                <td className={`px-4 py-5 font-bold text-lg dir-ltr text-right ${getPercentClass(asset.price_change_percentage_7d_in_currency)}`}>
+                                                    {fmtPct(asset.price_change_percentage_7d_in_currency)}
+                                                </td>
+                                                <td className="px-4 py-5 text-gray-600 text-lg">
+                                                    {formatCompact(asset.market_cap)}
+                                                </td>
+                                                <td className="px-4 py-5 text-gray-600 font-bold text-blue-600">
+                                                    {asset.type === 'CRYPTO' && asset.ath ? (
+                                                        <div className="flex flex-col">
+                                                            <span>{formatCurrency(potentialValue)}</span>
+                                                            <span className="text-xs text-green-600">{multiplier.toFixed(1)}x</span>
+                                                        </div>
+                                                    ) : '-'}
+                                                </td>
+                                                <td className="px-4 py-5 text-center border-r border-gray-100 no-click">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={isBlocked}
+                                                        onChange={() => toggleBlockStatus(asset.id)}
+                                                        className="w-6 h-6 text-red-600 rounded border-gray-300 focus:ring-red-500 cursor-pointer"
+                                                        title={isBlocked ? "بازگردانی به لیست" : "مسدود کردن"}
+                                                        onClick={(e) => e.stopPropagation()}
+                                                    />
+                                                </td>
+                                            </tr>
+                                            {/* Expanded Row */}
+                                            {isExpanded && (
+                                                <tr>
+                                                    <td colSpan={9} className="p-0 border-b border-gray-200 animate-[fadeIn_0.3s_ease-out]">
+                                                         <div className="w-full h-[500px]">
+                                                            <LazyWidget>
+                                                                <TradingViewWidget 
+                                                                    symbol={tvSymbol} 
+                                                                    isLogScale={isLogScale}
+                                                                    interval={interval}
+                                                                />
+                                                            </LazyWidget>
+                                                         </div>
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </React.Fragment>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
                )}
+
+                {/* Pagination Controls */}
+                <div className="mt-8 flex flex-col items-center gap-4">
+                    <span className="text-base text-gray-500">
+                        نمایش {((currentPage - 1) * pageSize) + 1} تا {Math.min(currentPage * pageSize, cryptoTotalCount)} از {cryptoTotalCount} مورد
+                    </span>
+                    <div className="flex items-center gap-2 bg-white p-2 rounded-lg shadow-sm border border-gray-200">
+                        <button 
+                            onClick={() => setCurrentPage(1)} 
+                            disabled={currentPage === 1}
+                            className="px-4 py-2 text-base rounded bg-gray-50 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed text-gray-600"
+                        >
+                            اولین
+                        </button>
+                        <button 
+                            onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))} 
+                            disabled={currentPage === 1}
+                            className="px-4 py-2 text-base rounded bg-gray-50 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed text-gray-600"
+                        >
+                            قبلی
+                        </button>
+                        
+                        <form 
+                            onSubmit={(e) => {
+                                e.preventDefault();
+                                const val = parseInt(pageInput);
+                                const maxPage = Math.ceil(cryptoTotalCount / pageSize);
+                                if (!isNaN(val) && val >= 1 && val <= maxPage) {
+                                    setCurrentPage(val);
+                                } else {
+                                    setPageInput(String(currentPage));
+                                }
+                            }}
+                            className="flex items-center gap-2 px-3 py-1.5 text-base font-semibold text-blue-600 bg-blue-50 rounded"
+                        >
+                            <span className="hidden sm:inline">صفحه</span>
+                            <input 
+                                type="number" 
+                                value={pageInput}
+                                onChange={(e) => setPageInput(e.target.value)}
+                                onBlur={() => {
+                                    const val = parseInt(pageInput);
+                                    const maxPage = Math.ceil(cryptoTotalCount / pageSize);
+                                    if (!isNaN(val) && val >= 1 && val <= maxPage) {
+                                        setCurrentPage(val);
+                                    } else {
+                                        setPageInput(String(currentPage));
+                                    }
+                                }}
+                                className="w-12 text-center bg-white border border-blue-200 rounded px-1 py-0.5 text-gray-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                            />
+                            <span className="whitespace-nowrap">از {totalPages || 1}</span>
+                        </form>
+
+                        <button 
+                            onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))} 
+                            disabled={currentPage >= totalPages}
+                            className="px-4 py-2 text-base rounded bg-gray-50 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed text-gray-600"
+                        >
+                            بعدی
+                        </button>
+                    </div>
+                </div>
             </>
         )}
       </main>
