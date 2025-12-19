@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import TradingViewWidget from './components/TradingViewWidget';
 import { auth, db } from './firebase';
@@ -503,7 +502,6 @@ const PAGE_SIZE_OPTIONS = [15, 30, 45, 60, 90];
 const LOCAL_STORAGE_KEY = 'crypto_layout_preference_v1';
 const PREF_INTERVAL_KEY = 'crypto_interval_v1';
 const PREF_CATEGORY_KEY = 'crypto_category_v1';
-const FAV_LISTS_KEY = 'crypto_fav_lists_v1'; // New key for multiple lists
 
 // Component: Copy Button
 const CopyButton = ({ text }: { text: string }) => {
@@ -763,10 +761,7 @@ const App: React.FC = () => {
     return new Set();
   });
   
-  // New: Multiple Favorites Lists
-  // Structure: { "List Name": Set(["btc", "eth"]) }
-  const [favLists, setFavLists] = useState<Record<string, Set<string>>>({ "لیست اصلی": new Set() });
-  const [activeFavList, setActiveFavList] = useState<string>("لیست اصلی");
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
   
   // Fetch Config
   const [loading, setLoading] = useState(false);
@@ -779,10 +774,6 @@ const App: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [showSymbolList, setShowSymbolList] = useState(false); // Modal State
   const [calcInput, setCalcInput] = useState<string>("1"); // Investment calculator amount
-
-  // New List State
-  const [newListName, setNewListName] = useState("");
-  const [showAddListInput, setShowAddListInput] = useState(false);
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -800,36 +791,13 @@ const App: React.FC = () => {
       setPageInput(String(currentPage));
   }, [currentPage]);
 
-  // Load Preferences (Favorites Lists)
+  // Load Preferences (Favorites only, RemovedIds is now lazy-loaded in useState)
   useEffect(() => {
-      // 1. Try to load the new list format
-      const savedLists = localStorage.getItem(FAV_LISTS_KEY);
-      if (savedLists) {
+      const savedFavs = localStorage.getItem('crypto_favorites_v1');
+      if (savedFavs) {
           try {
-              const parsed = JSON.parse(savedLists);
-              const hydrated: Record<string, Set<string>> = {};
-              for (const [key, val] of Object.entries(parsed)) {
-                  hydrated[key] = new Set(val as string[]);
-              }
-              setFavLists(hydrated);
-              // Ensure active list exists
-              if (!hydrated[activeFavList]) {
-                  setActiveFavList(Object.keys(hydrated)[0] || "لیست اصلی");
-              }
-              return; // Loaded successfully
-          } catch(e) {
-              console.error("Failed to parse fav lists", e);
-          }
-      }
-
-      // 2. Migration: If no new format, check for old single list format
-      const oldFavs = localStorage.getItem('crypto_favorites_v1');
-      if (oldFavs) {
-          try {
-              const parsed = JSON.parse(oldFavs);
-              if (Array.isArray(parsed)) {
-                  setFavLists({ "لیست اصلی": new Set(parsed) });
-              }
+              const parsed = JSON.parse(savedFavs);
+              if (Array.isArray(parsed)) setFavorites(new Set(parsed));
           } catch(e) {}
       }
   }, []);
@@ -845,19 +813,15 @@ const App: React.FC = () => {
             if (docSnap.exists()) {
                 const data = docSnap.data();
                 if (data.removedCoinIds && Array.isArray(data.removedCoinIds)) {
+                    // Only update if remote has more data or to sync, but prioritize local for speed initially
                     setRemovedIds(prev => {
                         const newSet = new Set(prev);
                         data.removedCoinIds.forEach((id: string) => newSet.add(id));
                         return newSet;
                     });
                 }
-                // Sync Fav Lists from Firebase (Simple overwrite for now, ideally merge)
-                if (data.favLists) {
-                    const hydrated: Record<string, Set<string>> = {};
-                    for (const [key, val] of Object.entries(data.favLists)) {
-                        hydrated[key] = new Set(val as string[]);
-                    }
-                    setFavLists(hydrated);
+                if (data.favorites && Array.isArray(data.favorites)) {
+                    setFavorites(new Set(data.favorites));
                 }
             }
         });
@@ -869,7 +833,7 @@ const App: React.FC = () => {
   // Reset pagination on category change or search
   useEffect(() => {
     setCurrentPage(1);
-  }, [activeCategory, searchQuery, showFavoritesOnly, viewMode, activeFavList]);
+  }, [activeCategory, searchQuery, showFavoritesOnly, viewMode]);
 
   // Handle Default Sorting (removed auto-reset of interval)
   useEffect(() => {
@@ -916,11 +880,6 @@ const App: React.FC = () => {
       });
   };
 
-  // Derived state for easy access to current favorites set
-  const currentFavoritesSet = useMemo(() => {
-      return favLists[activeFavList] || new Set();
-  }, [favLists, activeFavList]);
-
   // --- Data Fetching Strategy ---
   useEffect(() => {
     // 1. Non-Crypto Handling (Static Data)
@@ -935,7 +894,7 @@ const App: React.FC = () => {
             data = data.filter(a => !removedIds.has(a.id));
         }
         
-        if (showFavoritesOnly) data = data.filter(a => currentFavoritesSet.has(a.id));
+        if (showFavoritesOnly) data = data.filter(a => favorites.has(a.id));
         if (searchQuery) {
              const q = searchQuery.toLowerCase();
              data = data.filter(a => a.symbol.toLowerCase().includes(q) || a.name.toLowerCase().includes(q));
@@ -955,7 +914,7 @@ const App: React.FC = () => {
              data = data.filter(a => !removedIds.has(a.id));
         }
         
-        if (showFavoritesOnly) data = data.filter(a => currentFavoritesSet.has(a.id));
+        if (showFavoritesOnly) data = data.filter(a => favorites.has(a.id));
         if (searchQuery) {
              const q = searchQuery.toLowerCase();
              data = data.filter(a => a.symbol.toLowerCase().includes(q) || a.name.toLowerCase().includes(q));
@@ -978,6 +937,8 @@ const App: React.FC = () => {
             // CASE A: Gainers OR ATH - Specific Logic to find Top Movers/Highest ATH
             if (activeCategory === 'GAINERS' || activeCategory === 'ATH') {
                 // Fetch Top 10,000 coins (40 pages x 250)
+                // IMPLEMENTATION NOTE: 40 pages at 1-2s delay takes ~1 minute. 
+                // We add robust error handling to continue if some pages fail.
                 const totalPagesToScan = 40; 
                 let allCoins: any[] = [];
                 let consecutiveFailures = 0;
@@ -985,28 +946,34 @@ const App: React.FC = () => {
                 for (let p = 1; p <= totalPagesToScan; p++) {
                     setScanProgress(p); // Update progress indicator
                     
+                    // Stop if too many failures to save time/bandwidth
                     if (consecutiveFailures >= 3) {
                         console.warn("Too many consecutive failures, stopping scan early.");
                         break;
                     }
 
                     try {
+                        // Check abort before fetch
                         if (controller.signal.aborted) break;
                         
                         const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page=${p}&sparkline=false&price_change_percentage=24h`;
                         
+                        // Retry logic: Try twice per page
                         let res = null;
                         try {
                             res = await fetch(url, { signal: controller.signal });
                         } catch (e) {
                             if (controller.signal.aborted) throw e;
+                            // Wait and retry once on network error
                             await new Promise(r => setTimeout(r, 2000));
                             res = await fetch(url, { signal: controller.signal });
                         }
 
                         if (res && res.status === 429) {
                             console.warn("Rate limit hit (429). Pausing...");
-                            await new Promise(r => setTimeout(r, 5000)); 
+                            await new Promise(r => setTimeout(r, 5000)); // Long pause for rate limit
+                            // Increment failure but continue to try next page? Or just break? 
+                            // Usually rate limits persist, so breaking is safer for the IP.
                             consecutiveFailures++;
                             continue;
                         }
@@ -1018,13 +985,14 @@ const App: React.FC = () => {
                         
                         const json = await res.json();
                         if (Array.isArray(json)) {
-                            if (json.length === 0) break; 
+                            if (json.length === 0) break; // End of list
                             allCoins = [...allCoins, ...json];
-                            consecutiveFailures = 0; 
+                            consecutiveFailures = 0; // Reset failures
                         } else {
                             consecutiveFailures++;
                         }
                         
+                        // Dynamic Delay: Increase as we go deeper
                         const delay = p < 5 ? 1200 : 1600;
                         if (p !== totalPagesToScan) {
                              await new Promise(r => setTimeout(r, delay)); 
@@ -1033,23 +1001,29 @@ const App: React.FC = () => {
                     } catch (e: any) {
                         if (e.name !== 'AbortError') console.error(e);
                         consecutiveFailures++;
+                        // If critical abort, stop loop
                         if (e.name === 'AbortError') break;
                     }
                 }
 
                 if (allCoins.length === 0 && !controller.signal.aborted) {
+                     // Only throw if we found NOTHING. If we found partial data, show it.
                      throw new Error("No data found (API Error)");
                 }
                 
+                // Process Assets: Filter Blocklist, Stablecoins, and Duplicates
                 const cleanedData = processAssets(allCoins);
 
+                // Sort
                 let sorted = cleanedData;
                 if (activeCategory === 'GAINERS') {
                      sorted = cleanedData.sort((a: any, b: any) => (b.price_change_percentage_24h || 0) - (a.price_change_percentage_24h || 0));
                 } else if (activeCategory === 'ATH') {
+                     // Sort by ath_change_percentage ascending (e.g. -99% first)
                      sorted = cleanedData.sort((a: any, b: any) => (a.ath_change_percentage || 0) - (b.ath_change_percentage || 0));
                 }
                 
+                // Filter by search if needed
                 let filtered = sorted;
                 if (searchQuery) {
                     const q = searchQuery.toLowerCase();
@@ -1057,7 +1031,7 @@ const App: React.FC = () => {
                 }
 
                 if (showFavoritesOnly) {
-                    filtered = filtered.filter((c: any) => currentFavoritesSet.has(c.id));
+                    filtered = filtered.filter((c: any) => favorites.has(c.id));
                 }
 
                 setCryptoTotalCount(filtered.length);
@@ -1069,7 +1043,7 @@ const App: React.FC = () => {
 
             // CASE B: Show Favorites Only (Standard Crypto)
             } else if (showFavoritesOnly) {
-                const favIds = Array.from(currentFavoritesSet);
+                const favIds = Array.from(favorites);
                 if (favIds.length === 0) {
                     setDisplayedAssets([]);
                     setAllFetchedAssets([]);
@@ -1083,6 +1057,7 @@ const App: React.FC = () => {
                 const res = await fetch(url, { signal: controller.signal });
                 const json = await res.json();
                 
+                // Process Assets: Filter Blocklist, Stablecoins, and Duplicates
                 let filtered = processAssets(json);
 
                 if (searchQuery) {
@@ -1130,7 +1105,11 @@ const App: React.FC = () => {
                         return;
                     }
 
+                    // Fetch market data for found coins
+                    // Use a slice of the search results to fetch market data (max page size)
                     const start = (currentPage - 1) * pageSize;
+                    // Note: Search API doesn't support pagination, it returns all matches (or top matches).
+                    // We simulate pagination by slicing the result array.
                     const pageCoins = searchCoins.slice(start, start + pageSize);
                     const ids = pageCoins.map((c: any) => c.id).join(',');
 
@@ -1163,6 +1142,7 @@ const App: React.FC = () => {
                 }
             }
 
+            // In TABLE view, show removed items so they can be unblocked. In GRID view, hide them.
             if (viewMode === 'TABLE') {
                 setDisplayedAssets(data);
             } else {
@@ -1172,6 +1152,7 @@ const App: React.FC = () => {
         } catch (err: any) {
             if (err.name !== 'AbortError') {
                 console.error(err);
+                // Improve error message logic: only show if we have NO data
                 if (displayedAssets.length === 0) {
                     setError("خطا در برقراری ارتباط با سرور. (لطفا دوباره تلاش کنید)");
                 }
@@ -1186,11 +1167,13 @@ const App: React.FC = () => {
         clearTimeout(debounceTimer);
         controller.abort();
     };
-  }, [activeCategory, currentPage, pageSize, searchQuery, showFavoritesOnly, viewMode, removedIds, activeFavList, favLists]); 
+  }, [activeCategory, currentPage, pageSize, searchQuery, showFavoritesOnly, viewMode, removedIds]); 
+  // Added viewMode and removedIds to dependency so it refetches/refilters when switching views or blocking
 
   // --- Helpers ---
   const formatCurrency = (value?: number) => {
     if (value === undefined || value === null) return '-';
+    // Handle very small prices for meme coins (e.g. 0.00000123)
     if (value < 0.01 && value > 0) {
        return '$' + value.toFixed(8).replace(/\.?0+$/, "");
     }
@@ -1235,89 +1218,46 @@ const App: React.FC = () => {
   };
 
   const toggleBlockStatus = (id: string) => {
-    setRemovedIds((prev: Set<string>) => {
+    setRemovedIds((prev) => {
       const newSet = new Set(prev);
       if (newSet.has(id)) {
           newSet.delete(id); // Unblock
       } else {
           newSet.add(id); // Block
       }
-      const asArray = Array.from(newSet);
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(asArray));
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(Array.from(newSet)));
       if (user) {
           const userDocRef = doc(db, 'users', user.uid);
-          setDoc(userDocRef, { removedCoinIds: asArray }, { merge: true });
+          setDoc(userDocRef, { removedCoinIds: Array.from(newSet) }, { merge: true });
       }
       return newSet;
     });
   };
 
   const toggleFavorite = (id: string) => {
-      setFavLists((prev: Record<string, Set<string>>) => {
-          const currentSet = new Set(prev[activeFavList] || []);
-          if (currentSet.has(id)) currentSet.delete(id);
-          else currentSet.add(id);
-          
-          const newLists = { ...prev, [activeFavList]: currentSet };
-          
-          // Persist
-          const serialized: Record<string, string[]> = {};
-          for (const [key, val] of Object.entries(newLists)) {
-              serialized[key] = Array.from(val as Set<string>);
-          }
-          localStorage.setItem(FAV_LISTS_KEY, JSON.stringify(serialized));
-          
+      setFavorites(prev => {
+          const newSet = new Set(prev);
+          if (newSet.has(id)) newSet.delete(id);
+          else newSet.add(id);
+          localStorage.setItem('crypto_favorites_v1', JSON.stringify(Array.from(newSet)));
           if (user) {
               const userDocRef = doc(db, 'users', user.uid);
-              setDoc(userDocRef, { favLists: serialized }, { merge: true });
+              setDoc(userDocRef, { favorites: Array.from(newSet) }, { merge: true });
           }
-          
-          return newLists;
+          return newSet;
       });
-  };
-
-  const createNewList = () => {
-      if (!newListName.trim()) return;
-      if (favLists[newListName]) {
-          alert("این نام قبلا استفاده شده است.");
-          return;
-      }
-      setFavLists(prev => ({ ...prev, [newListName]: new Set() }));
-      setActiveFavList(newListName);
-      setNewListName("");
-      setShowAddListInput(false);
-  };
-
-  const deleteCurrentList = () => {
-      if (activeFavList === "لیست اصلی") return;
-      if (!window.confirm(`آیا مطمئن هستید که می‌خواهید لیست "${activeFavList}" را حذف کنید؟`)) return;
-      
-      setFavLists((prev: Record<string, Set<string>>) => {
-          const newState = { ...prev };
-          delete newState[activeFavList];
-          
-          // Persist
-          const serialized: Record<string, string[]> = {};
-          for (const [key, val] of Object.entries(newState)) {
-              serialized[key] = Array.from(val as Set<string>);
-          }
-          localStorage.setItem(FAV_LISTS_KEY, JSON.stringify(serialized));
-          if (user) {
-              const userDocRef = doc(db, 'users', user.uid);
-              setDoc(userDocRef, { favLists: serialized }, { merge: true });
-          }
-          
-          return newState;
-      });
-      setActiveFavList("لیست اصلی");
   };
 
   // Sorting Helper
   const handleSort = (key: keyof AssetData) => {
     setSortConfig(current => {
+        // If clicking the same key, toggle direction
         if (current.key === key) {
+             // If currently desc, go to asc
              return { key, direction: current.direction === 'desc' ? 'asc' : 'desc' };
         }
+        // New key, default to desc for metrics, asc for rank
+        // Others (Price, Vol, Change) -> Descending (High to Low)
         const defaultDir = key === 'market_cap_rank' ? 'asc' : 'desc';
         return { key, direction: defaultDir };
     });
@@ -1333,6 +1273,7 @@ const App: React.FC = () => {
     let data = [...displayedAssets];
     if (sortConfig.key) {
         data.sort((a, b) => {
+            // Handle potential undefined/null values safely
             const valA = (a[sortConfig.key!] as number) ?? (sortConfig.direction === 'asc' ? Infinity : -Infinity);
             const valB = (b[sortConfig.key!] as number) ?? (sortConfig.direction === 'asc' ? Infinity : -Infinity);
             
@@ -1356,15 +1297,7 @@ const App: React.FC = () => {
   };
 
   const handleExportBackup = () => {
-    const serializedFavs: Record<string, string[]> = {};
-    for (const [key, val] of Object.entries(favLists)) {
-        serializedFavs[key] = Array.from(val);
-    }
-    const data = { 
-        removedCoinIds: Array.from(removedIds), 
-        favLists: serializedFavs, 
-        exportedAt: new Date().toISOString() 
-    };
+    const data = { removedCoinIds: Array.from(removedIds), favorites: Array.from(favorites), exportedAt: new Date().toISOString() };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -1381,19 +1314,8 @@ const App: React.FC = () => {
     reader.onload = (e) => {
       try {
         const json = JSON.parse(e.target?.result as string);
-        if (json.removedCoinIds) setRemovedIds(new Set(json.removedCoinIds as string[]));
-        
-        // Handle old format vs new format
-        if (json.favLists) {
-            const hydrated: Record<string, Set<string>> = {};
-            for (const [key, val] of Object.entries(json.favLists as Record<string, unknown>)) {
-                hydrated[key] = new Set(val as string[]);
-            }
-            setFavLists(hydrated);
-        } else if (json.favorites) {
-            // Old format
-            setFavLists(prev => ({ ...prev, "لیست اصلی": new Set(json.favorites as string[]) }));
-        }
+        if (json.removedCoinIds) setRemovedIds(new Set(json.removedCoinIds));
+        if (json.favorites) setFavorites(new Set(json.favorites));
         alert("Backup restored!");
       } catch (err) { alert("Invalid file"); }
     };
@@ -1425,12 +1347,20 @@ const App: React.FC = () => {
   };
 
   const handleInfoClick = (asset: AssetData) => {
+      // Create a comprehensive analysis prompt
       const prompt = `حلیل جامع و پیش‌بینی آینده ارز دیجیتال ${asset.name} (${asset.symbol}) چیست؟آمار دقیق توکن‌های در حال گردش و توکن‌های کلیدر توکن های در حال گردش ،تحلیل جامع پروژه: توکن چیست و چه کاربردی دارد؟،پیش‌بینی آینده توکن: چه قیمتی و چه کاربردی؟`;
+      
       navigator.clipboard.writeText(prompt).catch(() => {});
+      
+      // Redirect to Gemini website
       window.open("https://gemini.google.com/", "_blank");
   };
   
+  // Smart Card Height Logic using viewport height (100vh) to avoid page scrolling for the card itself
+  // Adjusts to fill the screen minus header and padding
   const cardHeightClass = 'h-[calc(100vh-140px)] min-h-[500px]';
+
+  // Helper variables
   const totalPages = Math.ceil(cryptoTotalCount / pageSize);
 
   return (
@@ -1526,63 +1456,12 @@ const App: React.FC = () => {
                   {viewMode === 'GRID' ? '📋 لیست ارزها و مسدودی' : '📊 نمای چارت‌ها'}
                </button>
 
-              {/* --- New Favorite Lists Manager --- */}
-              <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg p-1 shadow-sm">
-                  <button
-                    onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
-                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 ${showFavoritesOnly ? 'bg-yellow-50 text-yellow-600' : 'text-gray-400 hover:text-yellow-500'}`}
-                    title="نمایش فقط لیست علاقه‌مندی فعال"
-                  >
-                    ★
-                  </button>
-                  
-                  <div className="relative group">
-                      <select
-                        value={activeFavList}
-                        onChange={(e) => setActiveFavList(e.target.value)}
-                        className="text-sm font-bold text-gray-700 bg-transparent outline-none cursor-pointer py-1 max-w-[100px] sm:max-w-[150px]"
-                      >
-                        {Object.keys(favLists).map(name => (
-                            <option key={name} value={name}>{name}</option>
-                        ))}
-                      </select>
-                  </div>
-
-                  <button 
-                    onClick={() => setShowAddListInput(true)} 
-                    className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500 text-xs"
-                    title="ساخت لیست جدید"
-                  >
-                    +
-                  </button>
-
-                  {activeFavList !== 'لیست اصلی' && (
-                      <button 
-                        onClick={deleteCurrentList} 
-                        className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-red-50 text-gray-400 hover:text-red-500 text-xs"
-                        title="حذف لیست فعلی"
-                      >
-                        ✕
-                      </button>
-                  )}
-              </div>
-
-              {/* Add List Modal/Input */}
-              {showAddListInput && (
-                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm" onClick={() => setShowAddListInput(false)}>
-                      <div className="bg-white p-4 rounded-xl shadow-lg flex gap-2" onClick={e => e.stopPropagation()}>
-                          <input 
-                            type="text" 
-                            value={newListName} 
-                            onChange={(e) => setNewListName(e.target.value)} 
-                            placeholder="نام لیست جدید..."
-                            className="border border-gray-300 rounded-lg px-3 py-1 outline-none focus:border-blue-500"
-                            autoFocus
-                          />
-                          <button onClick={createNewList} className="bg-blue-600 text-white px-4 py-1 rounded-lg">ایجاد</button>
-                      </div>
-                  </div>
-              )}
+              <button
+                onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
+                className={`px-3 py-2 rounded-lg border text-sm font-medium transition-colors flex items-center gap-1 ${showFavoritesOnly ? 'bg-yellow-50 border-yellow-300 text-yellow-700' : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'}`}
+              >
+                {showFavoritesOnly ? '★' : '☆'}
+              </button>
 
               <div className="h-6 w-px bg-gray-300 hidden md:block" />
               
@@ -1727,7 +1606,6 @@ const App: React.FC = () => {
                             ? getTradingViewSymbol(asset) 
                             : `CRYPTOCAP:${asset.symbol.toUpperCase()}`;
                         const insight = COIN_INSIGHTS[asset.id];
-                        const isFav = currentFavoritesSet.has(asset.id);
                         
                         // Investment Potential Calculation
                         const investment = parseFloat(calcInput) || 0;
@@ -1769,8 +1647,7 @@ const App: React.FC = () => {
                           <div className="flex items-center flex-shrink-0 gap-1">
                             <button 
                               onClick={() => toggleFavorite(asset.id)}
-                              className={`p-2 rounded-lg hover:bg-gray-100 transition-colors ${isFav ? 'text-yellow-400' : 'text-gray-300'}`}
-                              title={isFav ? "حذف از لیست فعلی" : "افزودن به لیست فعلی"}
+                              className={`p-2 rounded-lg hover:bg-gray-100 transition-colors ${favorites.has(asset.id) ? 'text-yellow-400' : 'text-gray-300'}`}
                             >
                                <span className="text-2xl">★</span>
                             </button>
@@ -2088,7 +1965,6 @@ const App: React.FC = () => {
                                         ? getTradingViewSymbol(asset) 
                                         : `CRYPTOCAP:${asset.symbol.toUpperCase()}`;
                                     const insight = COIN_INSIGHTS[asset.id];
-                                    const isFav = currentFavoritesSet.has(asset.id);
                                     
                                     // Investment Potential Calculation
                                     const investment = parseFloat(calcInput) || 0;
@@ -2119,7 +1995,7 @@ const App: React.FC = () => {
                                                     <div className="flex items-center gap-3">
                                                         <button 
                                                             onClick={(e) => { e.stopPropagation(); toggleFavorite(asset.id); }}
-                                                            className={`text-2xl transition-colors ${isFav ? 'text-yellow-400' : 'text-gray-300 hover:text-yellow-400'}`}
+                                                            className={`text-2xl transition-colors ${favorites.has(asset.id) ? 'text-yellow-400' : 'text-gray-300 hover:text-yellow-400'}`}
                                                         >
                                                             ★
                                                         </button>
@@ -2195,69 +2071,6 @@ const App: React.FC = () => {
                     </div>
                 </div>
                )}
-
-                {/* Pagination Controls */}
-                <div className="mt-8 flex flex-col items-center gap-4">
-                    <span className="text-base text-gray-500">
-                        نمایش {((currentPage - 1) * pageSize) + 1} تا {Math.min(currentPage * pageSize, cryptoTotalCount)} از {cryptoTotalCount} مورد
-                    </span>
-                    <div className="flex items-center gap-2 bg-white p-2 rounded-lg shadow-sm border border-gray-200">
-                        <button 
-                            onClick={() => setCurrentPage(1)} 
-                            disabled={currentPage === 1}
-                            className="px-4 py-2 text-base rounded bg-gray-50 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed text-gray-600"
-                        >
-                            اولین
-                        </button>
-                        <button 
-                            onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))} 
-                            disabled={currentPage === 1}
-                            className="px-4 py-2 text-base rounded bg-gray-50 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed text-gray-600"
-                        >
-                            قبلی
-                        </button>
-                        
-                        <form 
-                            onSubmit={(e) => {
-                                e.preventDefault();
-                                const val = parseInt(pageInput);
-                                const maxPage = Math.ceil(cryptoTotalCount / pageSize);
-                                if (!isNaN(val) && val >= 1 && val <= maxPage) {
-                                    setCurrentPage(val);
-                                } else {
-                                    setPageInput(String(currentPage));
-                                }
-                            }}
-                            className="flex items-center gap-2 px-3 py-1.5 text-base font-semibold text-blue-600 bg-blue-50 rounded"
-                        >
-                            <span className="hidden sm:inline">صفحه</span>
-                            <input 
-                                type="number" 
-                                value={pageInput}
-                                onChange={(e) => setPageInput(e.target.value)}
-                                onBlur={() => {
-                                    const val = parseInt(pageInput);
-                                    const maxPage = Math.ceil(cryptoTotalCount / pageSize);
-                                    if (!isNaN(val) && val >= 1 && val <= maxPage) {
-                                        setCurrentPage(val);
-                                    } else {
-                                        setPageInput(String(currentPage));
-                                    }
-                                }}
-                                className="w-12 text-center bg-white border border-blue-200 rounded px-1 py-0.5 text-gray-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                            />
-                            <span className="whitespace-nowrap">از {totalPages || 1}</span>
-                        </form>
-
-                        <button 
-                            onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))} 
-                            disabled={currentPage >= totalPages}
-                            className="px-4 py-2 text-base rounded bg-gray-50 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed text-gray-600"
-                        >
-                            بعدی
-                        </button>
-                    </div>
-                </div>
             </>
         )}
       </main>
