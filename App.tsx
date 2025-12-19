@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import TradingViewWidget from './components/TradingViewWidget';
 import { auth, db } from './firebase';
@@ -775,6 +776,7 @@ const App: React.FC = () => {
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showSymbolList, setShowSymbolList] = useState(false); // Modal State
+  const [calcInput, setCalcInput] = useState<string>("1"); // Investment calculator amount
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -1381,6 +1383,18 @@ const App: React.FC = () => {
             {/* Right: Controls */}
             <div className="flex flex-wrap items-center justify-center gap-2 w-full xl:w-auto">
               
+              {/* Calculator Input */}
+              <div className="flex items-center gap-2 bg-white border border-gray-200 px-2 py-1.5 rounded-lg shadow-sm">
+                  <span className="text-xs font-bold text-gray-500">خرید ($):</span>
+                  <input
+                      type="number"
+                      min="0"
+                      value={calcInput}
+                      onChange={(e) => setCalcInput(e.target.value)}
+                      className="w-12 text-center text-sm font-bold text-blue-600 outline-none bg-transparent"
+                  />
+              </div>
+              
               {/* View Toggle Button */}
                <button 
                   onClick={() => setViewMode(viewMode === 'GRID' ? 'TABLE' : 'GRID')}
@@ -1539,6 +1553,15 @@ const App: React.FC = () => {
                             ? getTradingViewSymbol(asset) 
                             : `CRYPTOCAP:${asset.symbol.toUpperCase()}`;
                         const insight = COIN_INSIGHTS[asset.id];
+                        
+                        // Investment Potential Calculation
+                        const investment = parseFloat(calcInput) || 0;
+                        const potentialValue = (asset.ath && asset.current_price)
+                            ? (investment / asset.current_price) * asset.ath
+                            : 0;
+                        const multiplier = (asset.ath && asset.current_price)
+                            ? (asset.ath / asset.current_price)
+                            : 0;
 
                         return (
                       <div 
@@ -1595,7 +1618,7 @@ const App: React.FC = () => {
                             <div className="px-5 py-4 bg-gray-50 flex justify-between items-center border-b border-gray-100 shrink-0 h-[65px]">
                                <div className="flex items-center gap-1">
                                   <span className="text-gray-800 font-bold text-3xl">{formatCurrency(asset.current_price)}</span>
-                               </div>
+                                </div>
                                <div className="flex items-center gap-1">
                                   <span className={`font-bold text-lg ${getPercentClass(asset.price_change_percentage_24h)} dir-ltr`}>
                                       {fmtPct(asset.price_change_percentage_24h)} (24h)
@@ -1604,9 +1627,9 @@ const App: React.FC = () => {
                             </div>
                         )}
 
-                        {/* 3. Detailed Stats (Responsive 2x2 or 4x1) */}
+                        {/* 3. Detailed Stats (Responsive 2x2 or 5 cols) */}
                         {hasDetails ? (
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3 p-4 bg-white border-b border-gray-100 text-gray-600 shrink-0 min-h-[160px]">
+                            <div className="grid grid-cols-2 sm:grid-cols-5 gap-x-4 gap-y-3 p-4 bg-white border-b border-gray-100 text-gray-600 shrink-0 min-h-[160px]">
                                 {/* Column 1: Historical Changes */}
                                 <div className="flex flex-col gap-1.5 text-sm">
                                     <div className="flex justify-between">
@@ -1624,7 +1647,7 @@ const App: React.FC = () => {
                                 </div>
 
                                 {/* Column 2: ATH Data */}
-                                <div className="flex flex-col gap-1.5 border-r sm:border-r-0 sm:border-l border-gray-100 pr-3 sm:pr-0 sm:pl-3 text-sm">
+                                <div className="flex flex-col gap-1.5 sm:border-l border-gray-100 sm:pl-3 text-sm">
                                     <div className="flex justify-between" title="All Time High Price">
                                         <span className="font-semibold text-gray-500">ATH:</span>
                                         <span className="font-bold text-gray-700">{formatCompact(asset.ath)}</span>
@@ -1640,7 +1663,7 @@ const App: React.FC = () => {
                                 </div>
 
                                 {/* Column 3: Market Data */}
-                                <div className="flex flex-col gap-1.5 border-l border-gray-100 pl-3 text-sm">
+                                <div className="flex flex-col gap-1.5 sm:border-l border-gray-100 sm:pl-3 text-sm">
                                      <div className="flex justify-between">
                                         <span className="font-semibold text-gray-500">Cap:</span>
                                         <span className="font-bold text-gray-700">{formatCompact(asset.market_cap)}</span>
@@ -1656,7 +1679,7 @@ const App: React.FC = () => {
                                 </div>
 
                                 {/* Column 4: Supply Data */}
-                                <div className="flex flex-col gap-1.5 border-l border-gray-100 pl-3 text-sm">
+                                <div className="flex flex-col gap-1.5 sm:border-l border-gray-100 sm:pl-3 text-sm">
                                     <div className="flex justify-between" title="Total Supply">
                                         <span className="font-semibold text-gray-500">Total:</span>
                                         <span className="font-bold text-gray-700">{formatCompactNum(asset.total_supply)}</span>
@@ -1672,6 +1695,22 @@ const App: React.FC = () => {
                                                 ? ((asset.circulating_supply / asset.total_supply) * 100).toFixed(1) + '%'
                                                 : '-'}
                                         </span>
+                                    </div>
+                                </div>
+
+                                {/* Column 5: Potential (New) */}
+                                <div className="flex flex-col gap-1.5 sm:border-l border-gray-100 sm:pl-3 text-sm bg-blue-50/50 rounded-lg p-1 sm:bg-transparent sm:p-0">
+                                    <div className="flex justify-between" title={`Investment: $${calcInput}`}>
+                                        <span className="font-semibold text-gray-500">Inv:</span>
+                                        <span className="font-bold text-gray-700">${calcInput}</span>
+                                    </div>
+                                    <div className="flex justify-between" title="Value if ATH reached">
+                                        <span className="font-semibold text-gray-500">Val:</span>
+                                        <span className="font-bold text-blue-600">{potentialValue > 0 ? formatCurrency(potentialValue) : '-'}</span>
+                                    </div>
+                                    <div className="flex justify-between" title="Multiplier to ATH">
+                                        <span className="font-semibold text-gray-500">X:</span>
+                                        <span className="font-bold text-green-600">{multiplier > 0 ? multiplier.toFixed(1) + 'x' : '-'}</span>
                                     </div>
                                 </div>
                             </div>
@@ -1859,12 +1898,8 @@ const App: React.FC = () => {
                                     >
                                       ارزش بازار {getSortIndicator('market_cap')}
                                     </th>
-                                    <th 
-                                      className="px-4 py-4 text-right cursor-pointer hover:bg-gray-100 transition-colors group"
-                                      onClick={() => handleSort('total_volume')}
-                                    >
-                                      حجم {getSortIndicator('total_volume')}
-                                    </th>
+                                    {/* Potential Column for Crypto Only */}
+                                    <th className="px-4 py-4 text-right">پتانسیل ({calcInput}$)</th>
                                     <th className="px-4 py-4 text-center w-24 bg-gray-100 text-gray-700 border-r">مسدودی</th>
                                 </tr>
                             </thead>
@@ -1877,6 +1912,15 @@ const App: React.FC = () => {
                                         ? getTradingViewSymbol(asset) 
                                         : `CRYPTOCAP:${asset.symbol.toUpperCase()}`;
                                     const insight = COIN_INSIGHTS[asset.id];
+                                    
+                                    // Investment Potential Calculation
+                                    const investment = parseFloat(calcInput) || 0;
+                                    const potentialValue = (asset.ath && asset.current_price)
+                                        ? (investment / asset.current_price) * asset.ath
+                                        : 0;
+                                    const multiplier = (asset.ath && asset.current_price)
+                                        ? (asset.ath / asset.current_price)
+                                        : 0;
                                     
                                     // Row styling: active state for expanded row
                                     const rowClass = isBlocked 
@@ -1931,8 +1975,13 @@ const App: React.FC = () => {
                                                 <td className="px-4 py-5 text-gray-600 text-lg">
                                                     {formatCompact(asset.market_cap)}
                                                 </td>
-                                                <td className="px-4 py-5 text-gray-600 text-lg">
-                                                    {formatCompact(asset.total_volume)}
+                                                <td className="px-4 py-5 text-gray-600 font-bold text-blue-600">
+                                                    {asset.type === 'CRYPTO' && asset.ath ? (
+                                                        <div className="flex flex-col">
+                                                            <span>{formatCurrency(potentialValue)}</span>
+                                                            <span className="text-xs text-green-600">{multiplier.toFixed(1)}x</span>
+                                                        </div>
+                                                    ) : '-'}
                                                 </td>
                                                 <td className="px-4 py-5 text-center border-r border-gray-100 no-click">
                                                     <input 
@@ -1948,7 +1997,7 @@ const App: React.FC = () => {
                                             {/* Expanded Row */}
                                             {isExpanded && (
                                                 <tr>
-                                                    <td colSpan={8} className="p-0 border-b border-gray-200 animate-[fadeIn_0.3s_ease-out]">
+                                                    <td colSpan={9} className="p-0 border-b border-gray-200 animate-[fadeIn_0.3s_ease-out]">
                                                          <div className="w-full h-[1000px] bg-white relative border-t border-blue-100 shadow-inner flex flex-col">
                                                             {/* Close Button overlay */}
                                                             <button 
