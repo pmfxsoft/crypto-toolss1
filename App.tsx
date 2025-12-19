@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import TradingViewWidget from './components/TradingViewWidget';
 import { auth, db } from './firebase';
@@ -6,7 +5,7 @@ import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 
 // --- Types ---
-type Category = 'CRYPTO' | 'FOREX' | 'STOCKS' | 'GAINERS';
+type Category = 'CRYPTO' | 'FOREX' | 'STOCKS' | 'GAINERS' | 'ATH';
 type ViewMode = 'GRID' | 'TABLE';
 type ChartMode = 'PRICE' | 'MCAP' | 'BOTH' | 'INFO';
 
@@ -845,6 +844,9 @@ const App: React.FC = () => {
           setSortConfig({ key: 'market_cap_rank', direction: 'asc' });
       } else if (activeCategory === 'GAINERS') {
           setSortConfig({ key: 'price_change_percentage_24h', direction: 'desc' });
+      } else if (activeCategory === 'ATH') {
+          // Sort by drop percentage ascending (e.g. -99% before -10%) to show biggest potential
+          setSortConfig({ key: 'ath_change_percentage', direction: 'asc' });
       } else if (activeCategory === 'FOREX' || activeCategory === 'STOCKS') {
           setSortConfig({ key: null, direction: 'desc' }); // Default order
       }
@@ -924,7 +926,7 @@ const App: React.FC = () => {
         return;
     }
 
-    // 2. Crypto & Gainers Handling (API)
+    // 2. Crypto & Gainers & ATH Handling (API)
     const controller = new AbortController();
 
     const fetchData = async () => {
@@ -933,9 +935,10 @@ const App: React.FC = () => {
         try {
             let data: AssetData[] = [];
             
-            // CASE A: Gainers - Specific Logic to find Top Movers
-            if (activeCategory === 'GAINERS') {
+            // CASE A: Gainers OR ATH - Specific Logic to find Top Movers/Highest ATH
+            if (activeCategory === 'GAINERS' || activeCategory === 'ATH') {
                 // Fetch Top 750 coins (3 pages x 250) sequentially to respect rate limits
+                // This pool is used to find top gainers or sort by ATH
                 const pages = [1, 2, 3];
                 let allCoins: any[] = [];
                 
@@ -978,8 +981,15 @@ const App: React.FC = () => {
                 // Process Assets: Filter Blocklist, Stablecoins, and Duplicates
                 const cleanedData = processAssets(allCoins);
 
-                // Sort by 24h change descending (GAINERS logic)
-                const sorted = cleanedData.sort((a: any, b: any) => (b.price_change_percentage_24h || 0) - (a.price_change_percentage_24h || 0));
+                // Sort
+                let sorted = cleanedData;
+                if (activeCategory === 'GAINERS') {
+                     sorted = cleanedData.sort((a: any, b: any) => (b.price_change_percentage_24h || 0) - (a.price_change_percentage_24h || 0));
+                } else if (activeCategory === 'ATH') {
+                     // Sort by ath_change_percentage ascending (lowest number = biggest drop = most distance)
+                     // e.g. -99% comes before -50%
+                     sorted = cleanedData.sort((a: any, b: any) => (a.ath_change_percentage || 0) - (b.ath_change_percentage || 0));
+                }
                 
                 // Filter by search if needed
                 let filtered = sorted;
@@ -1339,6 +1349,12 @@ const App: React.FC = () => {
                   className={`px-3 py-1.5 rounded-md text-sm font-semibold transition-all whitespace-nowrap ${activeCategory === 'CRYPTO' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                 >
                   کریپتو
+                </button>
+                <button 
+                  onClick={() => setActiveCategory('ATH')} 
+                  className={`px-3 py-1.5 rounded-md text-sm font-semibold transition-all whitespace-nowrap ${activeCategory === 'ATH' ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-500 hover:text-purple-600'}`}
+                >
+                  بیشترین ATH
                 </button>
                 <button 
                   onClick={() => setActiveCategory('GAINERS')} 
@@ -2133,68 +2149,75 @@ const App: React.FC = () => {
                         <button 
                             onClick={() => setCurrentPage(1)} 
                             disabled={currentPage === 1}
-                            className="px-4 py-2 text-base rounded bg-gray-50 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed text-gray-600"
+                            className="px-4 py-2 text-base rounded bg-gray-50 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                            اولین
+                            «
                         </button>
                         <button 
-                            onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))} 
+                            onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))} 
                             disabled={currentPage === 1}
-                            className="px-4 py-2 text-base rounded bg-gray-50 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed text-gray-600"
+                            className="px-4 py-2 text-base rounded bg-gray-50 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                            قبلی
+                            ‹
                         </button>
                         
-                        <form 
-                            onSubmit={(e) => {
-                                e.preventDefault();
-                                const val = parseInt(pageInput);
-                                const maxPage = Math.ceil(cryptoTotalCount / pageSize);
-                                if (!isNaN(val) && val >= 1 && val <= maxPage) {
-                                    setCurrentPage(val);
-                                } else {
-                                    setPageInput(String(currentPage));
-                                }
-                            }}
-                            className="flex items-center gap-2 px-3 py-1.5 text-base font-semibold text-blue-600 bg-blue-50 rounded"
-                        >
-                            <span className="hidden sm:inline">صفحه</span>
+                        <div className="flex items-center gap-1">
                             <input 
-                                type="number" 
+                                type="text" 
                                 value={pageInput}
                                 onChange={(e) => setPageInput(e.target.value)}
-                                onBlur={() => {
-                                    const val = parseInt(pageInput);
-                                    const maxPage = Math.ceil(cryptoTotalCount / pageSize);
-                                    if (!isNaN(val) && val >= 1 && val <= maxPage) {
-                                        setCurrentPage(val);
-                                    } else {
-                                        setPageInput(String(currentPage));
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        let p = parseInt(pageInput);
+                                        if (isNaN(p)) p = 1;
+                                        if (p < 1) p = 1;
+                                        if (p > totalPages) p = totalPages;
+                                        setCurrentPage(p);
+                                        setPageInput(String(p));
                                     }
                                 }}
-                                className="w-12 text-center bg-white border border-blue-200 rounded px-1 py-0.5 text-gray-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                onBlur={() => {
+                                    let p = parseInt(pageInput);
+                                    if (isNaN(p)) p = 1;
+                                    if (p < 1) p = 1;
+                                    if (p > totalPages) p = totalPages;
+                                    setCurrentPage(p);
+                                    setPageInput(String(p));
+                                }}
+                                className="w-12 h-10 text-center rounded border border-gray-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-blue-500"
                             />
-                            <span className="whitespace-nowrap">از {totalPages || 1}</span>
-                        </form>
+                            <span className="text-gray-400">/</span>
+                            <span className="text-gray-600 font-medium">{totalPages}</span>
+                        </div>
 
                         <button 
-                            onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))} 
-                            disabled={currentPage >= totalPages}
-                            className="px-4 py-2 text-base rounded bg-gray-50 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed text-gray-600"
+                            onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))} 
+                            disabled={currentPage === totalPages}
+                            className="px-4 py-2 text-base rounded bg-gray-50 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                            بعدی
+                            ›
+                        </button>
+                        <button 
+                            onClick={() => setCurrentPage(totalPages)} 
+                            disabled={currentPage === totalPages}
+                            className="px-4 py-2 text-base rounded bg-gray-50 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            »
                         </button>
                     </div>
                 </div>
             </>
         )}
-        
-        {/* Symbol List Modal */}
-        {showSymbolList && (
-            <BlockedListModal blockedIds={removedIds} allAssets={allFetchedAssets} onClose={() => setShowSymbolList(false)} />
-        )}
-
       </main>
+
+      {/* Blocked List Modal */}
+      {showSymbolList && (
+          <BlockedListModal 
+              blockedIds={removedIds} 
+              allAssets={allFetchedAssets} 
+              onClose={() => setShowSymbolList(false)} 
+          />
+      )}
     </div>
   );
 };
