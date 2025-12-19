@@ -556,7 +556,10 @@ const BlockedListModal = ({
   }, [blockedIds, allAssets]);
 
   const handleCopyList = () => {
+    // Generate a clean list formatted for code insertion (e.g. array of strings)
+    // This makes it easy for the developer to paste into the code.
     const listText = blockedList.map(item => `'${item.id}'`).join(',\n');
+    
     navigator.clipboard.writeText(listText);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -765,7 +768,6 @@ const App: React.FC = () => {
   
   // Fetch Config
   const [loading, setLoading] = useState(false);
-  const [scanProgress, setScanProgress] = useState(0); // Progress tracker
   const [error, setError] = useState<string | null>(null);
   
   // UI Filters
@@ -929,86 +931,51 @@ const App: React.FC = () => {
 
     const fetchData = async () => {
         setLoading(true);
-        setScanProgress(0);
         setError(null);
         try {
             let data: AssetData[] = [];
             
             // CASE A: Gainers OR ATH - Specific Logic to find Top Movers/Highest ATH
             if (activeCategory === 'GAINERS' || activeCategory === 'ATH') {
-                // Fetch Top 10,000 coins (40 pages x 250)
-                // IMPLEMENTATION NOTE: 40 pages at 1-2s delay takes ~1 minute. 
-                // We add robust error handling to continue if some pages fail.
-                const totalPagesToScan = 40; 
+                // Fetch Top 750 coins (3 pages x 250) sequentially to respect rate limits
+                // This pool is used to find top gainers or sort by ATH
+                const pages = [1, 2, 3];
                 let allCoins: any[] = [];
-                let consecutiveFailures = 0;
                 
-                for (let p = 1; p <= totalPagesToScan; p++) {
-                    setScanProgress(p); // Update progress indicator
-                    
-                    // Stop if too many failures to save time/bandwidth
-                    if (consecutiveFailures >= 3) {
-                        console.warn("Too many consecutive failures, stopping scan early.");
-                        break;
-                    }
-
+                for (const p of pages) {
                     try {
                         // Check abort before fetch
                         if (controller.signal.aborted) break;
                         
                         const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page=${p}&sparkline=false&price_change_percentage=24h`;
+                        const res = await fetch(url, { signal: controller.signal });
                         
-                        // Retry logic: Try twice per page
-                        let res = null;
-                        try {
-                            res = await fetch(url, { signal: controller.signal });
-                        } catch (e) {
-                            if (controller.signal.aborted) throw e;
-                            // Wait and retry once on network error
-                            await new Promise(r => setTimeout(r, 2000));
-                            res = await fetch(url, { signal: controller.signal });
-                        }
-
-                        if (res && res.status === 429) {
-                            console.warn("Rate limit hit (429). Pausing...");
-                            await new Promise(r => setTimeout(r, 5000)); // Long pause for rate limit
-                            // Increment failure but continue to try next page? Or just break? 
-                            // Usually rate limits persist, so breaking is safer for the IP.
-                            consecutiveFailures++;
-                            continue;
+                        if (res.status === 429) {
+                            console.warn("Rate limit hit, stopping fetch");
+                            break; // Stop fetching but use existing data
                         }
                         
-                        if (!res || !res.ok) {
-                            consecutiveFailures++;
-                            continue;
-                        }
+                        if (!res.ok) continue;
                         
                         const json = await res.json();
                         if (Array.isArray(json)) {
-                            if (json.length === 0) break; // End of list
                             allCoins = [...allCoins, ...json];
-                            consecutiveFailures = 0; // Reset failures
-                        } else {
-                            consecutiveFailures++;
                         }
                         
-                        // Dynamic Delay: Increase as we go deeper
-                        const delay = p < 5 ? 1200 : 1600;
-                        if (p !== totalPagesToScan) {
-                             await new Promise(r => setTimeout(r, delay)); 
+                        // Small delay to prevent rate limit (free tier allows ~10-30 req/min, so bursts are bad)
+                        if (p !== pages[pages.length - 1]) {
+                             await new Promise(r => setTimeout(r, 1200)); 
                         }
 
                     } catch (e: any) {
                         if (e.name !== 'AbortError') console.error(e);
-                        consecutiveFailures++;
-                        // If critical abort, stop loop
-                        if (e.name === 'AbortError') break;
+                        // If network error, stop loop
+                        break; 
                     }
                 }
 
                 if (allCoins.length === 0 && !controller.signal.aborted) {
-                     // Only throw if we found NOTHING. If we found partial data, show it.
-                     throw new Error("No data found (API Error)");
+                     throw new Error("API Limit or Network Error");
                 }
                 
                 // Process Assets: Filter Blocklist, Stablecoins, and Duplicates
@@ -1019,7 +986,8 @@ const App: React.FC = () => {
                 if (activeCategory === 'GAINERS') {
                      sorted = cleanedData.sort((a: any, b: any) => (b.price_change_percentage_24h || 0) - (a.price_change_percentage_24h || 0));
                 } else if (activeCategory === 'ATH') {
-                     // Sort by ath_change_percentage ascending (e.g. -99% first)
+                     // Sort by ath_change_percentage ascending (lowest number = biggest drop = most distance)
+                     // e.g. -99% comes before -50%
                      sorted = cleanedData.sort((a: any, b: any) => (a.ath_change_percentage || 0) - (b.ath_change_percentage || 0));
                 }
                 
@@ -1152,10 +1120,7 @@ const App: React.FC = () => {
         } catch (err: any) {
             if (err.name !== 'AbortError') {
                 console.error(err);
-                // Improve error message logic: only show if we have NO data
-                if (displayedAssets.length === 0) {
-                    setError("خطا در برقراری ارتباط با سرور. (لطفا دوباره تلاش کنید)");
-                }
+                setError("خطا در برقراری ارتباط با سرور.");
             }
         } finally {
             if (!controller.signal.aborted) setLoading(false);
@@ -1572,9 +1537,7 @@ const App: React.FC = () => {
         {loading && (
             <div className="fixed top-[70px] left-1/2 -translate-x-1/2 z-30 bg-blue-600 text-white px-4 py-1.5 rounded-full shadow-lg text-sm font-medium flex items-center gap-2 animate-pulse">
                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                {(activeCategory === 'GAINERS' || activeCategory === 'ATH') 
-                    ? `اسکن ارزها (${scanProgress} از 40 صفحه)...` 
-                    : "بروزرسانی لیست..."}
+                بروزرسانی لیست...
             </div>
         )}
         {error && (
@@ -2051,14 +2014,119 @@ const App: React.FC = () => {
                                             {isExpanded && (
                                                 <tr>
                                                     <td colSpan={9} className="p-0 border-b border-gray-200 animate-[fadeIn_0.3s_ease-out]">
-                                                         <div className="w-full h-[500px]">
-                                                            <LazyWidget>
-                                                                <TradingViewWidget 
-                                                                    symbol={tvSymbol} 
-                                                                    isLogScale={isLogScale}
-                                                                    interval={interval}
-                                                                />
-                                                            </LazyWidget>
+                                                         <div className="w-full h-[1000px] bg-white relative border-t border-blue-100 shadow-inner flex flex-col">
+                                                            {/* Close Button overlay */}
+                                                            <button 
+                                                                onClick={(e) => { e.stopPropagation(); setExpandedRowId(null); }}
+                                                                className="absolute top-4 left-4 z-20 bg-white text-gray-400 hover:text-red-600 border border-gray-200 rounded-lg p-2 shadow-sm transition-all hover:scale-105"
+                                                            >
+                                                                بستن ✕
+                                                            </button>
+
+                                                            {/* Controls Bar for Table Expanded */}
+                                                            <div className="flex items-center justify-center gap-4 py-2 bg-gray-50 border-b border-gray-200 z-10">
+                                                                <span className="text-sm font-bold text-gray-700">نمودار:</span>
+                                                                <div className="flex bg-white rounded-lg p-1 border border-gray-200 shadow-sm">
+                                                                    <button 
+                                                                        onClick={(e) => { e.stopPropagation(); toggleChartMode(asset.id, 'PRICE'); }}
+                                                                        className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${currentChartMode === 'PRICE' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-100'}`}
+                                                                    >
+                                                                        قیمت
+                                                                    </button>
+                                                                    <button 
+                                                                        onClick={(e) => { e.stopPropagation(); toggleChartMode(asset.id, 'MCAP'); }}
+                                                                        className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${currentChartMode === 'MCAP' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-100'}`}
+                                                                    >
+                                                                        ارزش بازار
+                                                                    </button>
+                                                                    <button 
+                                                                        onClick={(e) => { e.stopPropagation(); toggleChartMode(asset.id, 'BOTH'); }}
+                                                                        className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${currentChartMode === 'BOTH' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-100'}`}
+                                                                    >
+                                                                        همزمان
+                                                                    </button>
+                                                                    <button 
+                                                                        onClick={(e) => { e.stopPropagation(); handleInfoClick(asset); }}
+                                                                        className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${currentChartMode === 'INFO' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-100'}`}
+                                                                    >
+                                                                        تحلیل
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Chart or Info Content for Table View */}
+                                                            <div className="flex-grow relative">
+                                                                {currentChartMode === 'INFO' ? (
+                                                                     <div className="p-6 h-full overflow-y-auto custom-scrollbar bg-white max-w-4xl mx-auto">
+                                                                        <div className="flex flex-col gap-6">
+                                                                            {insight ? (
+                                                                                <>
+                                                                                    <div className="bg-purple-50 p-4 rounded-xl border border-purple-100">
+                                                                                        <h4 className="text-purple-800 font-bold mb-2 flex items-center gap-2">
+                                                                                            <span className="text-xl">📂</span> دسته‌بندی
+                                                                                        </h4>
+                                                                                        <p className="text-gray-700 font-medium leading-relaxed">{insight.category}</p>
+                                                                                    </div>
+
+                                                                                    <div>
+                                                                                        <h4 className="text-gray-800 font-bold mb-2 flex items-center gap-2">
+                                                                                            <span className="text-xl">🛠️</span> کاربرد و هدف پروژه
+                                                                                        </h4>
+                                                                                        <p className="text-gray-600 leading-loose text-justify">{insight.utility}</p>
+                                                                                    </div>
+
+                                                                                    <div>
+                                                                                        <h4 className="text-gray-800 font-bold mb-2 flex items-center gap-2">
+                                                                                            <span className="text-xl">🚀</span> آینده و پتانسیل رشد
+                                                                                        </h4>
+                                                                                        <p className="text-gray-600 leading-loose text-justify">{insight.outlook}</p>
+                                                                                    </div>
+                                                                                </>
+                                                                            ) : (
+                                                                                <div className="flex flex-col items-center justify-center h-full text-center py-10 opacity-70">
+                                                                                    <span className="text-4xl mb-4">📝</span>
+                                                                                    <p className="text-gray-500 font-medium">داده‌های تحلیلی برای این ارز در دسترس نیست.</p>
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                ) : currentChartMode === 'BOTH' ? (
+                                                                    <div className="flex flex-col md:flex-row h-full w-full">
+                                                                        <div className="h-1/2 w-full md:h-full md:w-1/2 border-b md:border-b-0 md:border-r border-gray-200 relative">
+                                                                            <div className="absolute top-2 left-2 z-10 bg-white/90 px-2 py-0.5 rounded text-[10px] font-bold text-gray-500 shadow-sm pointer-events-none border border-gray-100">
+                                                                                قیمت (Price)
+                                                                            </div>
+                                                                            <LazyWidget>
+                                                                                <TradingViewWidget 
+                                                                                    symbol={getTradingViewSymbol(asset)} 
+                                                                                    isLogScale={isLogScale}
+                                                                                    interval={interval}
+                                                                                />
+                                                                            </LazyWidget>
+                                                                        </div>
+                                                                        <div className="h-1/2 w-full md:h-full md:w-1/2 relative">
+                                                                            <div className="absolute top-2 left-2 z-10 bg-white/90 px-2 py-0.5 rounded text-[10px] font-bold text-gray-500 shadow-sm pointer-events-none border border-gray-100">
+                                                                                 ارزش بازار (Market Cap)
+                                                                            </div>
+                                                                            <LazyWidget>
+                                                                                <TradingViewWidget 
+                                                                                    symbol={`CRYPTOCAP:${asset.symbol.toUpperCase()}`} 
+                                                                                    isLogScale={isLogScale}
+                                                                                    interval={interval}
+                                                                                />
+                                                                            </LazyWidget>
+                                                                        </div>
+                                                                    </div>
+                                                                ) : (
+                                                                    <LazyWidget>
+                                                                        <TradingViewWidget 
+                                                                            symbol={tvSymbol} 
+                                                                            isLogScale={isLogScale}
+                                                                            interval={interval}
+                                                                        />
+                                                                    </LazyWidget>
+                                                                )}
+                                                            </div>
                                                          </div>
                                                     </td>
                                                 </tr>
@@ -2071,16 +2139,84 @@ const App: React.FC = () => {
                     </div>
                 </div>
                )}
+
+                {/* Pagination Controls */}
+                <div className="mt-8 flex flex-col items-center gap-4">
+                    <span className="text-base text-gray-500">
+                        نمایش {((currentPage - 1) * pageSize) + 1} تا {Math.min(currentPage * pageSize, cryptoTotalCount)} از {cryptoTotalCount} مورد
+                    </span>
+                    <div className="flex items-center gap-2 bg-white p-2 rounded-lg shadow-sm border border-gray-200">
+                        <button 
+                            onClick={() => setCurrentPage(1)} 
+                            disabled={currentPage === 1}
+                            className="px-4 py-2 text-base rounded bg-gray-50 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            «
+                        </button>
+                        <button 
+                            onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))} 
+                            disabled={currentPage === 1}
+                            className="px-4 py-2 text-base rounded bg-gray-50 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            ‹
+                        </button>
+                        
+                        <div className="flex items-center gap-1">
+                            <input 
+                                type="text" 
+                                value={pageInput}
+                                onChange={(e) => setPageInput(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        let p = parseInt(pageInput);
+                                        if (isNaN(p)) p = 1;
+                                        if (p < 1) p = 1;
+                                        if (p > totalPages) p = totalPages;
+                                        setCurrentPage(p);
+                                        setPageInput(String(p));
+                                    }
+                                }}
+                                onBlur={() => {
+                                    let p = parseInt(pageInput);
+                                    if (isNaN(p)) p = 1;
+                                    if (p < 1) p = 1;
+                                    if (p > totalPages) p = totalPages;
+                                    setCurrentPage(p);
+                                    setPageInput(String(p));
+                                }}
+                                className="w-12 h-10 text-center rounded border border-gray-200 text-sm font-semibold outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                            <span className="text-gray-400">/</span>
+                            <span className="text-gray-600 font-medium">{totalPages}</span>
+                        </div>
+
+                        <button 
+                            onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))} 
+                            disabled={currentPage === totalPages}
+                            className="px-4 py-2 text-base rounded bg-gray-50 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            ›
+                        </button>
+                        <button 
+                            onClick={() => setCurrentPage(totalPages)} 
+                            disabled={currentPage === totalPages}
+                            className="px-4 py-2 text-base rounded bg-gray-50 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            »
+                        </button>
+                    </div>
+                </div>
             </>
         )}
       </main>
-      
+
+      {/* Blocked List Modal */}
       {showSymbolList && (
-        <BlockedListModal 
-            blockedIds={removedIds} 
-            allAssets={allFetchedAssets} 
-            onClose={() => setShowSymbolList(false)} 
-        />
+          <BlockedListModal 
+              blockedIds={removedIds} 
+              allAssets={allFetchedAssets} 
+              onClose={() => setShowSymbolList(false)} 
+          />
       )}
     </div>
   );
