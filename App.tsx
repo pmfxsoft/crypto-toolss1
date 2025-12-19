@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import TradingViewWidget from './components/TradingViewWidget';
 import { auth, db } from './firebase';
@@ -1451,6 +1450,57 @@ const App: React.FC = () => {
   const cardHeightClass = 'h-[calc(100vh-140px)] min-h-[500px]';
   const totalPages = Math.ceil(cryptoTotalCount / pageSize);
 
+  const handlePageChange = (newPage: number) => {
+      if (newPage >= 1 && newPage <= totalPages) {
+          setCurrentPage(newPage);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+  };
+
+  // Reusable Pagination Component
+  const PaginationControls = () => (
+      <div className="flex justify-center items-center gap-3 py-4" dir="ltr">
+          <button
+              onClick={() => handlePageChange(currentPage - 1)}
+              disabled={currentPage === 1 || loading}
+              className="px-3 py-1 rounded bg-white border border-gray-300 shadow-sm disabled:opacity-50 hover:bg-gray-100 text-gray-700 transition-colors"
+          >
+              Previous
+          </button>
+          <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500 font-medium">Page</span>
+              <input
+                  type="number"
+                  value={pageInput}
+                  onChange={(e) => setPageInput(e.target.value)}
+                  onBlur={() => {
+                      let p = parseInt(pageInput);
+                      if (isNaN(p) || p < 1) p = 1;
+                      if (p > totalPages) p = totalPages;
+                      handlePageChange(p);
+                  }}
+                  onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                          let p = parseInt(pageInput);
+                          if (isNaN(p) || p < 1) p = 1;
+                          if (p > totalPages) p = totalPages;
+                          handlePageChange(p);
+                      }
+                  }}
+                  className="w-12 h-8 text-center border border-gray-300 rounded text-sm outline-none focus:border-blue-500 font-bold text-gray-700"
+              />
+              <span className="text-sm text-gray-500 font-medium">of {totalPages}</span>
+          </div>
+          <button
+              onClick={() => handlePageChange(currentPage + 1)}
+              disabled={currentPage === totalPages || loading}
+              className="px-3 py-1 rounded bg-white border border-gray-300 shadow-sm disabled:opacity-50 hover:bg-gray-100 text-gray-700 transition-colors"
+          >
+              Next
+          </button>
+      </div>
+  );
+
   return (
     <div className="min-h-screen flex flex-col font-sans bg-gray-50 text-right">
       {/* Header */}
@@ -1460,7 +1510,11 @@ const App: React.FC = () => {
             
             {/* Left: Title & Search */}
             <div className="flex flex-col md:flex-row items-center gap-4 w-full xl:w-auto">
-              <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2 whitespace-nowrap">
+              <h1 
+                onClick={() => window.location.reload()} 
+                className="text-2xl font-bold text-gray-800 flex items-center gap-2 whitespace-nowrap cursor-pointer hover:opacity-80 transition-opacity select-none"
+                title="بازنشانی و بارگذاری مجدد برنامه"
+              >
                 <span className="text-blue-600">₿</span>
                 بازار مالی
               </h1>
@@ -1729,6 +1783,9 @@ const App: React.FC = () => {
             </div>
         ) : (
             <>
+               {/* Pagination Top */}
+               {!loading && sortedAssets.length > 0 && <PaginationControls />}
+
                {/* --- GRID VIEW (Default) --- */}
                {viewMode === 'GRID' && (
                   <div className={`grid gap-6 ${
@@ -2168,6 +2225,9 @@ const App: React.FC = () => {
                       </table>
                   </div>
                )}
+
+               {/* Pagination Bottom */}
+               {!loading && sortedAssets.length > 0 && <PaginationControls />}
             </>
         )}
       </main>
