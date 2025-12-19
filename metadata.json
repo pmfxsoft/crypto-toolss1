@@ -1,5 +1,5 @@
 {
-  "name": "نمودار پیشرفته لگاریتمی بیت‌کوین",
+  "name": "cryptotools",
   "description": "یک اپلیکیشن وب برای نمایش نمودار پیشرفته و لگاریتمی قیمت بیت‌کوین با استفاده از ویجت TradingView.",
   "requestFramePermissions": []
 }
