@@ -8,7 +8,6 @@ import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 type Category = 'CRYPTO' | 'FOREX' | 'STOCKS' | 'GAINERS' | 'ATH';
 type ViewMode = 'GRID' | 'TABLE';
 type ChartMode = 'PRICE' | 'MCAP' | 'BOTH' | 'INFO';
-type DataSource = 'CoinGecko' | 'CoinPaprika' | 'Static';
 
 interface AssetData {
   id: string;
@@ -31,7 +30,6 @@ interface AssetData {
   low_24h?: number;
   total_supply?: number;
   circulating_supply?: number;
-  source?: string; // New field to track data source
 }
 
 interface CoinInsight {
@@ -411,83 +409,83 @@ const COIN_INSIGHTS: Record<string, CoinInsight> = {
 
 // Static data for Forex and Stocks
 const FOREX_PAIRS: AssetData[] = [
-  { id: 'fx-usdsek', symbol: 'USDSEK', name: 'USD/SEK', type: 'FOREX', current_price: 9.31603, price_change_percentage_24h: -0.47, source: 'Static' },
-  { id: 'fx-nzdjpy', symbol: 'NZDJPY', name: 'NZD/JPY', type: 'FOREX', current_price: 90.427, price_change_percentage_24h: -0.34, source: 'Static' },
-  { id: 'fx-cadchf', symbol: 'CADCHF', name: 'CAD/CHF', type: 'FOREX', current_price: 0.57961, price_change_percentage_24h: -0.57, source: 'Static' },
-  { id: 'fx-nzdchf', symbol: 'NZDCHF', name: 'NZD/CHF', type: 'FOREX', current_price: 0.46400, price_change_percentage_24h: -0.59, source: 'Static' },
-  { id: 'fx-audchf', symbol: 'AUDCHF', name: 'AUD/CHF', type: 'FOREX', current_price: 0.53278, price_change_percentage_24h: -0.62, source: 'Static' },
-  { id: 'fx-usdchf', symbol: 'USDCHF', name: 'USD/CHF', type: 'FOREX', current_price: 0.80288, price_change_percentage_24h: -0.50, source: 'Static' },
-  { id: 'fx-usdils', symbol: 'USDILS', name: 'USD/ILS', type: 'FOREX', current_price: 3.23854, price_change_percentage_24h: 0.46, source: 'Static' },
-  { id: 'fx-usdzar', symbol: 'USDZAR', name: 'USD/ZAR', type: 'FOREX', current_price: 16.99200, price_change_percentage_24h: -0.35, source: 'Static' },
-  { id: 'fx-audjpy', symbol: 'AUDJPY', name: 'AUD/JPY', type: 'FOREX', current_price: 103.819, price_change_percentage_24h: -0.37, source: 'Static' },
-  { id: 'fx-eurtry', symbol: 'EURTRY', name: 'EUR/TRY', type: 'FOREX', current_price: 49.63950, price_change_percentage_24h: 0.16, source: 'Static' },
-  { id: 'fx-gbptry', symbol: 'GBPTRY', name: 'GBP/TRY', type: 'FOREX', current_price: 56.79890, price_change_percentage_24h: 0.22, source: 'Static' },
-  { id: 'fx-nzdusd', symbol: 'NZDUSD', name: 'NZD/USD', type: 'FOREX', current_price: 0.57797, price_change_percentage_24h: -0.08, source: 'Static' },
-  { id: 'fx-chfjpy', symbol: 'CHFJPY', name: 'CHF/JPY', type: 'FOREX', current_price: 194.869, price_change_percentage_24h: 0.25, source: 'Static' },
-  { id: 'fx-gbpsek', symbol: 'GBPSEK', name: 'GBP/SEK', type: 'FOREX', current_price: 12.41040, price_change_percentage_24h: -0.29, source: 'Static' },
-  { id: 'fx-nzdsgd', symbol: 'NZDSGD', name: 'NZD/SGD', type: 'FOREX', current_price: 0.74870, price_change_percentage_24h: -0.21, source: 'Static' },
-  { id: 'fx-usdhuf', symbol: 'USDHUF', name: 'USD/HUF', type: 'FOREX', current_price: 329.300, price_change_percentage_24h: -0.22, source: 'Static' },
-  { id: 'fx-cadjpy', symbol: 'CADJPY', name: 'CAD/JPY', type: 'FOREX', current_price: 112.957, price_change_percentage_24h: -0.33, source: 'Static' },
-  { id: 'fx-eurzar', symbol: 'EURZAR', name: 'EUR/ZAR', type: 'FOREX', current_price: 19.78260, price_change_percentage_24h: -0.23, source: 'Static' },
-  { id: 'fx-gbpnzd', symbol: 'GBPNZD', name: 'GBP/NZD', type: 'FOREX', current_price: 2.30511, price_change_percentage_24h: 0.27, source: 'Static' },
-  { id: 'fx-nzdcad', symbol: 'NZDCAD', name: 'NZD/CAD', type: 'FOREX', current_price: 0.80052, price_change_percentage_24h: -0.02, source: 'Static' },
-  { id: 'fx-usdpln', symbol: 'USDPLN', name: 'USD/PLN', type: 'FOREX', current_price: 3.62881, price_change_percentage_24h: -0.21, source: 'Static' },
-  { id: 'fx-eurchf', symbol: 'EURCHF', name: 'EUR/CHF', type: 'FOREX', current_price: 0.93479, price_change_percentage_24h: -0.38, source: 'Static' },
-  { id: 'fx-eurnzd', symbol: 'EURNZD', name: 'EUR/NZD', type: 'FOREX', current_price: 2.01456, price_change_percentage_24h: 0.21, source: 'Static' },
-  { id: 'fx-gbpcad', symbol: 'GBPCAD', name: 'GBP/CAD', type: 'FOREX', current_price: 1.84530, price_change_percentage_24h: 0.25, source: 'Static' },
-  { id: 'fx-gbpzar', symbol: 'GBPZAR', name: 'GBP/ZAR', type: 'FOREX', current_price: 22.63570, price_change_percentage_24h: -0.17, source: 'Static' },
-  { id: 'fx-usdczk', symbol: 'USDCZK', name: 'USD/CZK', type: 'FOREX', current_price: 20.84410, price_change_percentage_24h: -0.15, source: 'Static' },
-  { id: 'fx-audusd', symbol: 'AUDUSD', name: 'AUD/USD', type: 'FOREX', current_price: 0.66362, price_change_percentage_24h: -0.11, source: 'Static' },
-  { id: 'fx-eurcad', symbol: 'EURCAD', name: 'EUR/CAD', type: 'FOREX', current_price: 1.61270, price_change_percentage_24h: 0.19, source: 'Static' },
-  { id: 'fx-eurjpy', symbol: 'EURJPY', name: 'EUR/JPY', type: 'FOREX', current_price: 182.171, price_change_percentage_24h: -0.13, source: 'Static' },
-  { id: 'fx-eurmxn', symbol: 'EURMXN', name: 'EUR/MXN', type: 'FOREX', current_price: 21.20040, price_change_percentage_24h: 0.15, source: 'Static' },
-  { id: 'fx-eurusd', symbol: 'EURUSD', name: 'EUR/USD', type: 'FOREX', current_price: 1.16434, price_change_percentage_24h: 0.12, source: 'Static' },
-  { id: 'fx-gbpaud', symbol: 'GBPAUD', name: 'GBP/AUD', type: 'FOREX', current_price: 2.00757, price_change_percentage_24h: 0.30, source: 'Static' },
-  { id: 'fx-gbpchf', symbol: 'GBPCHF', name: 'GBP/CHF', type: 'FOREX', current_price: 1.06964, price_change_percentage_24h: -0.32, source: 'Static' },
-  { id: 'fx-gbpnok', symbol: 'GBPNOK', name: 'GBP/NOK', type: 'FOREX', current_price: 13.52440, price_change_percentage_24h: 0.26, source: 'Static' },
-  { id: 'fx-gbpusd', symbol: 'GBPUSD', name: 'GBP/USD', type: 'FOREX', current_price: 1.33227, price_change_percentage_24h: 0.18, source: 'Static' },
-  { id: 'fx-usdjpy', symbol: 'USDJPY', name: 'USD/JPY', type: 'FOREX', current_price: 156.460, price_change_percentage_24h: -0.26, source: 'Static' },
-  { id: 'fx-usdnok', symbol: 'USDNOK', name: 'USD/NOK', type: 'FOREX', current_price: 10.15160, price_change_percentage_24h: 0.08, source: 'Static' },
-  { id: 'fx-audcad', symbol: 'AUDCAD', name: 'AUD/CAD', type: 'FOREX', current_price: 0.91916, price_change_percentage_24h: -0.04, source: 'Static' },
-  { id: 'fx-audnzd', symbol: 'AUDNZD', name: 'AUD/NZD', type: 'FOREX', current_price: 1.14819, price_change_percentage_24h: -0.03, source: 'Static' },
-  { id: 'fx-eurhkd', symbol: 'EURHKD', name: 'EUR/HKD', type: 'FOREX', current_price: 9.06063, price_change_percentage_24h: 0.12, source: 'Static' },
-  { id: 'fx-gbpjpy', symbol: 'GBPJPY', name: 'GBP/JPY', type: 'FOREX', current_price: 208.443, price_change_percentage_24h: -0.07, source: 'Static' },
-  { id: 'fx-usddkk', symbol: 'USDDKK', name: 'USD/DKK', type: 'FOREX', current_price: 6.41506, price_change_percentage_24h: -0.11, source: 'Static' },
-  { id: 'fx-euraud', symbol: 'EURAUD', name: 'EUR/AUD', type: 'FOREX', current_price: 1.75453, price_change_percentage_24h: 0.23, source: 'Static' },
-  { id: 'fx-usdkrw', symbol: 'USDKRW', name: 'USD/KRW', type: 'FOREX', current_price: 1468.32, price_change_percentage_24h: -0.01, source: 'Static' },
-  { id: 'fx-usdsgd', symbol: 'USDSGD', name: 'USD/SGD', type: 'FOREX', current_price: 1.29545, price_change_percentage_24h: -0.12, source: 'Static' },
-  { id: 'fx-eurpln', symbol: 'EURPLN', name: 'EUR/PLN', type: 'FOREX', current_price: 4.22521, price_change_percentage_24h: -0.09, source: 'Static' },
-  { id: 'fx-gbpdkk', symbol: 'GBPDKK', name: 'GBP/DKK', type: 'FOREX', current_price: 8.54657, price_change_percentage_24h: 0.07, source: 'Static' },
-  { id: 'fx-gbpsgd', symbol: 'GBPSGD', name: 'GBP/SGD', type: 'FOREX', current_price: 1.72587, price_change_percentage_24h: 0.06, source: 'Static' },
-  { id: 'fx-usdcad', symbol: 'USDCAD', name: 'USD/CAD', type: 'FOREX', current_price: 1.38516, price_change_percentage_24h: 0.07, source: 'Static' },
-  { id: 'fx-usdtry', symbol: 'USDTRY', name: 'USD/TRY', type: 'FOREX', current_price: 42.60250, price_change_percentage_24h: 0.03, source: 'Static' },
-  { id: 'fx-eurgbp', symbol: 'EURGBP', name: 'EUR/GBP', type: 'FOREX', current_price: 0.87393, price_change_percentage_24h: -0.06, source: 'Static' },
-  { id: 'fx-eursgd', symbol: 'EURSGD', name: 'EUR/SGD', type: 'FOREX', current_price: 1.50833, price_change_percentage_24h: 0.00, source: 'Static' },
-  { id: 'fx-usdmxn', symbol: 'USDMXN', name: 'USD/MXN', type: 'FOREX', current_price: 18.20560, price_change_percentage_24h: 0.02, source: 'Static' },
-  { id: 'fx-usdcnh', symbol: 'USDCNH', name: 'USD/CNH', type: 'FOREX', current_price: 7.06741, price_change_percentage_24h: 0.08, source: 'Static' },
+  { id: 'fx-usdsek', symbol: 'USDSEK', name: 'USD/SEK', type: 'FOREX', current_price: 9.31603, price_change_percentage_24h: -0.47 },
+  { id: 'fx-nzdjpy', symbol: 'NZDJPY', name: 'NZD/JPY', type: 'FOREX', current_price: 90.427, price_change_percentage_24h: -0.34 },
+  { id: 'fx-cadchf', symbol: 'CADCHF', name: 'CAD/CHF', type: 'FOREX', current_price: 0.57961, price_change_percentage_24h: -0.57 },
+  { id: 'fx-nzdchf', symbol: 'NZDCHF', name: 'NZD/CHF', type: 'FOREX', current_price: 0.46400, price_change_percentage_24h: -0.59 },
+  { id: 'fx-audchf', symbol: 'AUDCHF', name: 'AUD/CHF', type: 'FOREX', current_price: 0.53278, price_change_percentage_24h: -0.62 },
+  { id: 'fx-usdchf', symbol: 'USDCHF', name: 'USD/CHF', type: 'FOREX', current_price: 0.80288, price_change_percentage_24h: -0.50 },
+  { id: 'fx-usdils', symbol: 'USDILS', name: 'USD/ILS', type: 'FOREX', current_price: 3.23854, price_change_percentage_24h: 0.46 },
+  { id: 'fx-usdzar', symbol: 'USDZAR', name: 'USD/ZAR', type: 'FOREX', current_price: 16.99200, price_change_percentage_24h: -0.35 },
+  { id: 'fx-audjpy', symbol: 'AUDJPY', name: 'AUD/JPY', type: 'FOREX', current_price: 103.819, price_change_percentage_24h: -0.37 },
+  { id: 'fx-eurtry', symbol: 'EURTRY', name: 'EUR/TRY', type: 'FOREX', current_price: 49.63950, price_change_percentage_24h: 0.16 },
+  { id: 'fx-gbptry', symbol: 'GBPTRY', name: 'GBP/TRY', type: 'FOREX', current_price: 56.79890, price_change_percentage_24h: 0.22 },
+  { id: 'fx-nzdusd', symbol: 'NZDUSD', name: 'NZD/USD', type: 'FOREX', current_price: 0.57797, price_change_percentage_24h: -0.08 },
+  { id: 'fx-chfjpy', symbol: 'CHFJPY', name: 'CHF/JPY', type: 'FOREX', current_price: 194.869, price_change_percentage_24h: 0.25 },
+  { id: 'fx-gbpsek', symbol: 'GBPSEK', name: 'GBP/SEK', type: 'FOREX', current_price: 12.41040, price_change_percentage_24h: -0.29 },
+  { id: 'fx-nzdsgd', symbol: 'NZDSGD', name: 'NZD/SGD', type: 'FOREX', current_price: 0.74870, price_change_percentage_24h: -0.21 },
+  { id: 'fx-usdhuf', symbol: 'USDHUF', name: 'USD/HUF', type: 'FOREX', current_price: 329.300, price_change_percentage_24h: -0.22 },
+  { id: 'fx-cadjpy', symbol: 'CADJPY', name: 'CAD/JPY', type: 'FOREX', current_price: 112.957, price_change_percentage_24h: -0.33 },
+  { id: 'fx-eurzar', symbol: 'EURZAR', name: 'EUR/ZAR', type: 'FOREX', current_price: 19.78260, price_change_percentage_24h: -0.23 },
+  { id: 'fx-gbpnzd', symbol: 'GBPNZD', name: 'GBP/NZD', type: 'FOREX', current_price: 2.30511, price_change_percentage_24h: 0.27 },
+  { id: 'fx-nzdcad', symbol: 'NZDCAD', name: 'NZD/CAD', type: 'FOREX', current_price: 0.80052, price_change_percentage_24h: -0.02 },
+  { id: 'fx-usdpln', symbol: 'USDPLN', name: 'USD/PLN', type: 'FOREX', current_price: 3.62881, price_change_percentage_24h: -0.21 },
+  { id: 'fx-eurchf', symbol: 'EURCHF', name: 'EUR/CHF', type: 'FOREX', current_price: 0.93479, price_change_percentage_24h: -0.38 },
+  { id: 'fx-eurnzd', symbol: 'EURNZD', name: 'EUR/NZD', type: 'FOREX', current_price: 2.01456, price_change_percentage_24h: 0.21 },
+  { id: 'fx-gbpcad', symbol: 'GBPCAD', name: 'GBP/CAD', type: 'FOREX', current_price: 1.84530, price_change_percentage_24h: 0.25 },
+  { id: 'fx-gbpzar', symbol: 'GBPZAR', name: 'GBP/ZAR', type: 'FOREX', current_price: 22.63570, price_change_percentage_24h: -0.17 },
+  { id: 'fx-usdczk', symbol: 'USDCZK', name: 'USD/CZK', type: 'FOREX', current_price: 20.84410, price_change_percentage_24h: -0.15 },
+  { id: 'fx-audusd', symbol: 'AUDUSD', name: 'AUD/USD', type: 'FOREX', current_price: 0.66362, price_change_percentage_24h: -0.11 },
+  { id: 'fx-eurcad', symbol: 'EURCAD', name: 'EUR/CAD', type: 'FOREX', current_price: 1.61270, price_change_percentage_24h: 0.19 },
+  { id: 'fx-eurjpy', symbol: 'EURJPY', name: 'EUR/JPY', type: 'FOREX', current_price: 182.171, price_change_percentage_24h: -0.13 },
+  { id: 'fx-eurmxn', symbol: 'EURMXN', name: 'EUR/MXN', type: 'FOREX', current_price: 21.20040, price_change_percentage_24h: 0.15 },
+  { id: 'fx-eurusd', symbol: 'EURUSD', name: 'EUR/USD', type: 'FOREX', current_price: 1.16434, price_change_percentage_24h: 0.12 },
+  { id: 'fx-gbpaud', symbol: 'GBPAUD', name: 'GBP/AUD', type: 'FOREX', current_price: 2.00757, price_change_percentage_24h: 0.30 },
+  { id: 'fx-gbpchf', symbol: 'GBPCHF', name: 'GBP/CHF', type: 'FOREX', current_price: 1.06964, price_change_percentage_24h: -0.32 },
+  { id: 'fx-gbpnok', symbol: 'GBPNOK', name: 'GBP/NOK', type: 'FOREX', current_price: 13.52440, price_change_percentage_24h: 0.26 },
+  { id: 'fx-gbpusd', symbol: 'GBPUSD', name: 'GBP/USD', type: 'FOREX', current_price: 1.33227, price_change_percentage_24h: 0.18 },
+  { id: 'fx-usdjpy', symbol: 'USDJPY', name: 'USD/JPY', type: 'FOREX', current_price: 156.460, price_change_percentage_24h: -0.26 },
+  { id: 'fx-usdnok', symbol: 'USDNOK', name: 'USD/NOK', type: 'FOREX', current_price: 10.15160, price_change_percentage_24h: 0.08 },
+  { id: 'fx-audcad', symbol: 'AUDCAD', name: 'AUD/CAD', type: 'FOREX', current_price: 0.91916, price_change_percentage_24h: -0.04 },
+  { id: 'fx-audnzd', symbol: 'AUDNZD', name: 'AUD/NZD', type: 'FOREX', current_price: 1.14819, price_change_percentage_24h: -0.03 },
+  { id: 'fx-eurhkd', symbol: 'EURHKD', name: 'EUR/HKD', type: 'FOREX', current_price: 9.06063, price_change_percentage_24h: 0.12 },
+  { id: 'fx-gbpjpy', symbol: 'GBPJPY', name: 'GBP/JPY', type: 'FOREX', current_price: 208.443, price_change_percentage_24h: -0.07 },
+  { id: 'fx-usddkk', symbol: 'USDDKK', name: 'USD/DKK', type: 'FOREX', current_price: 6.41506, price_change_percentage_24h: -0.11 },
+  { id: 'fx-euraud', symbol: 'EURAUD', name: 'EUR/AUD', type: 'FOREX', current_price: 1.75453, price_change_percentage_24h: 0.23 },
+  { id: 'fx-usdkrw', symbol: 'USDKRW', name: 'USD/KRW', type: 'FOREX', current_price: 1468.32, price_change_percentage_24h: -0.01 },
+  { id: 'fx-usdsgd', symbol: 'USDSGD', name: 'USD/SGD', type: 'FOREX', current_price: 1.29545, price_change_percentage_24h: -0.12 },
+  { id: 'fx-eurpln', symbol: 'EURPLN', name: 'EUR/PLN', type: 'FOREX', current_price: 4.22521, price_change_percentage_24h: -0.09 },
+  { id: 'fx-gbpdkk', symbol: 'GBPDKK', name: 'GBP/DKK', type: 'FOREX', current_price: 8.54657, price_change_percentage_24h: 0.07 },
+  { id: 'fx-gbpsgd', symbol: 'GBPSGD', name: 'GBP/SGD', type: 'FOREX', current_price: 1.72587, price_change_percentage_24h: 0.06 },
+  { id: 'fx-usdcad', symbol: 'USDCAD', name: 'USD/CAD', type: 'FOREX', current_price: 1.38516, price_change_percentage_24h: 0.07 },
+  { id: 'fx-usdtry', symbol: 'USDTRY', name: 'USD/TRY', type: 'FOREX', current_price: 42.60250, price_change_percentage_24h: 0.03 },
+  { id: 'fx-eurgbp', symbol: 'EURGBP', name: 'EUR/GBP', type: 'FOREX', current_price: 0.87393, price_change_percentage_24h: -0.06 },
+  { id: 'fx-eursgd', symbol: 'EURSGD', name: 'EUR/SGD', type: 'FOREX', current_price: 1.50833, price_change_percentage_24h: 0.00 },
+  { id: 'fx-usdmxn', symbol: 'USDMXN', name: 'USD/MXN', type: 'FOREX', current_price: 18.20560, price_change_percentage_24h: 0.02 },
+  { id: 'fx-usdcnh', symbol: 'USDCNH', name: 'USD/CNH', type: 'FOREX', current_price: 7.06741, price_change_percentage_24h: 0.08 },
 ];
 
 const STOCK_DATA: AssetData[] = [
-  { id: 'stock-aapl', symbol: 'AAPL', name: 'Apple Inc.', type: 'STOCKS', current_price: 220.50, price_change_percentage_24h: 1.25, source: 'Static' },
-  { id: 'stock-msft', symbol: 'MSFT', name: 'Microsoft Corp.', type: 'STOCKS', current_price: 415.30, price_change_percentage_24h: 0.85, source: 'Static' },
-  { id: 'stock-googl', symbol: 'GOOGL', name: 'Alphabet Inc.', type: 'STOCKS', current_price: 175.20, price_change_percentage_24h: -0.45, source: 'Static' },
-  { id: 'stock-amzn', symbol: 'AMZN', name: 'Amazon.com Inc.', type: 'STOCKS', current_price: 185.10, price_change_percentage_24h: 2.10, source: 'Static' },
-  { id: 'stock-tsla', symbol: 'TSLA', name: 'Tesla Inc.', type: 'STOCKS', current_price: 240.40, price_change_percentage_24h: -1.55, source: 'Static' },
-  { id: 'stock-nvda', symbol: 'NVDA', name: 'NVIDIA Corp.', type: 'STOCKS', current_price: 120.80, price_change_percentage_24h: 3.50, source: 'Static' },
-  { id: 'stock-meta', symbol: 'META', name: 'Meta Platforms', type: 'STOCKS', current_price: 500.25, price_change_percentage_24h: 1.15, source: 'Static' },
-  { id: 'stock-nflx', symbol: 'NFLX', name: 'Netflix Inc.', type: 'STOCKS', current_price: 650.10, price_change_percentage_24h: 0.45, source: 'Static' },
-  { id: 'stock-amd', symbol: 'AMD', name: 'Advanced Micro Devices', type: 'STOCKS', current_price: 155.60, price_change_percentage_24h: 1.80, source: 'Static' },
-  { id: 'stock-intc', symbol: 'INTC', name: 'Intel Corp.', type: 'STOCKS', current_price: 30.50, price_change_percentage_24h: -0.90, source: 'Static' },
-  { id: 'stock-pypl', symbol: 'PYPL', name: 'PayPal Holdings', type: 'STOCKS', current_price: 65.40, price_change_percentage_24h: 0.60, source: 'Static' },
-  { id: 'stock-adbe', symbol: 'ADBE', name: 'Adobe Inc.', type: 'STOCKS', current_price: 480.20, price_change_percentage_24h: -1.20, source: 'Static' },
-  { id: 'stock-crm', symbol: 'CRM', name: 'Salesforce Inc.', type: 'STOCKS', current_price: 260.30, price_change_percentage_24h: 0.75, source: 'Static' },
-  { id: 'stock-csco', symbol: 'CSCO', name: 'Cisco Systems', type: 'STOCKS', current_price: 48.90, price_change_percentage_24h: 0.30, source: 'Static' },
-  { id: 'stock-pep', symbol: 'PEP', name: 'PepsiCo Inc.', type: 'STOCKS', current_price: 170.50, price_change_percentage_24h: -0.20, source: 'Static' },
-  { id: 'stock-ko', symbol: 'KO', name: 'Coca-Cola Co.', type: 'STOCKS', current_price: 60.10, price_change_percentage_24h: 0.15, source: 'Static' },
-  { id: 'stock-dis', symbol: 'DIS', name: 'Walt Disney Co.', type: 'STOCKS', current_price: 95.60, price_change_percentage_24h: 1.40, source: 'Static' },
-  { id: 'stock-nke', symbol: 'NKE', name: 'Nike Inc.', type: 'STOCKS', current_price: 85.30, price_change_percentage_24h: -0.80, source: 'Static' },
-  { id: 'stock-xom', symbol: 'XOM', name: 'Exxon Mobil Corp.', type: 'STOCKS', current_price: 115.40, price_change_percentage_24h: 0.90, source: 'Static' },
-  { id: 'stock-cvx', symbol: 'CVX', name: 'Chevron Corp.', type: 'STOCKS', current_price: 155.70, price_change_percentage_24h: 0.50, source: 'Static' },
+  { id: 'stock-aapl', symbol: 'AAPL', name: 'Apple Inc.', type: 'STOCKS', current_price: 220.50, price_change_percentage_24h: 1.25 },
+  { id: 'stock-msft', symbol: 'MSFT', name: 'Microsoft Corp.', type: 'STOCKS', current_price: 415.30, price_change_percentage_24h: 0.85 },
+  { id: 'stock-googl', symbol: 'GOOGL', name: 'Alphabet Inc.', type: 'STOCKS', current_price: 175.20, price_change_percentage_24h: -0.45 },
+  { id: 'stock-amzn', symbol: 'AMZN', name: 'Amazon.com Inc.', type: 'STOCKS', current_price: 185.10, price_change_percentage_24h: 2.10 },
+  { id: 'stock-tsla', symbol: 'TSLA', name: 'Tesla Inc.', type: 'STOCKS', current_price: 240.40, price_change_percentage_24h: -1.55 },
+  { id: 'stock-nvda', symbol: 'NVDA', name: 'NVIDIA Corp.', type: 'STOCKS', current_price: 120.80, price_change_percentage_24h: 3.50 },
+  { id: 'stock-meta', symbol: 'META', name: 'Meta Platforms', type: 'STOCKS', current_price: 500.25, price_change_percentage_24h: 1.15 },
+  { id: 'stock-nflx', symbol: 'NFLX', name: 'Netflix Inc.', type: 'STOCKS', current_price: 650.10, price_change_percentage_24h: 0.45 },
+  { id: 'stock-amd', symbol: 'AMD', name: 'Advanced Micro Devices', type: 'STOCKS', current_price: 155.60, price_change_percentage_24h: 1.80 },
+  { id: 'stock-intc', symbol: 'INTC', name: 'Intel Corp.', type: 'STOCKS', current_price: 30.50, price_change_percentage_24h: -0.90 },
+  { id: 'stock-pypl', symbol: 'PYPL', name: 'PayPal Holdings', type: 'STOCKS', current_price: 65.40, price_change_percentage_24h: 0.60 },
+  { id: 'stock-adbe', symbol: 'ADBE', name: 'Adobe Inc.', type: 'STOCKS', current_price: 480.20, price_change_percentage_24h: -1.20 },
+  { id: 'stock-crm', symbol: 'CRM', name: 'Salesforce Inc.', type: 'STOCKS', current_price: 260.30, price_change_percentage_24h: 0.75 },
+  { id: 'stock-csco', symbol: 'CSCO', name: 'Cisco Systems', type: 'STOCKS', current_price: 48.90, price_change_percentage_24h: 0.30 },
+  { id: 'stock-pep', symbol: 'PEP', name: 'PepsiCo Inc.', type: 'STOCKS', current_price: 170.50, price_change_percentage_24h: -0.20 },
+  { id: 'stock-ko', symbol: 'KO', name: 'Coca-Cola Co.', type: 'STOCKS', current_price: 60.10, price_change_percentage_24h: 0.15 },
+  { id: 'stock-dis', symbol: 'DIS', name: 'Walt Disney Co.', type: 'STOCKS', current_price: 95.60, price_change_percentage_24h: 1.40 },
+  { id: 'stock-nke', symbol: 'NKE', name: 'Nike Inc.', type: 'STOCKS', current_price: 85.30, price_change_percentage_24h: -0.80 },
+  { id: 'stock-xom', symbol: 'XOM', name: 'Exxon Mobil Corp.', type: 'STOCKS', current_price: 115.40, price_change_percentage_24h: 0.90 },
+  { id: 'stock-cvx', symbol: 'CVX', name: 'Chevron Corp.', type: 'STOCKS', current_price: 155.70, price_change_percentage_24h: 0.50 },
 ];
 
 const TIMEFRAMES = [
@@ -750,8 +748,7 @@ const App: React.FC = () => {
   // Data State
   const [displayedAssets, setDisplayedAssets] = useState<AssetData[]>([]);
   const [allFetchedAssets, setAllFetchedAssets] = useState<AssetData[]>([]); // Store raw fetched data to lookup names for blocked list
-  const [dataSource, setDataSource] = useState<DataSource>('CoinGecko');
-
+  
   // User Preferences
   const [removedIds, setRemovedIds] = useState<Set<string>>(() => {
     if (typeof window !== 'undefined') {
@@ -936,96 +933,20 @@ const App: React.FC = () => {
       return favLists[activeFavList] || new Set<string>();
   }, [favLists, activeFavList]);
 
-  // --- API Functions ---
-
-  // 1. Fetch from Binance (Real-time prices)
-  const updatePricesWithBinance = async (currentAssets: AssetData[]): Promise<AssetData[]> => {
-      if (currentAssets.length === 0) return currentAssets;
-      try {
-          // Map asset symbols to Binance pairs (e.g. BTC -> BTCUSDT)
-          // We only check for specific assets to save bandwidth or check all?
-          // Checking all ~15-20 assets per page is fine.
-          const res = await fetch('https://api.binance.com/api/v3/ticker/price');
-          if (!res.ok) return currentAssets;
-          const data = await res.json();
-          
-          // Create a map for O(1) lookup: "BTC" -> 65000
-          const priceMap = new Map<string, number>();
-          if (Array.isArray(data)) {
-              data.forEach((item: any) => {
-                  if (item.symbol.endsWith('USDT')) {
-                      const baseSymbol = item.symbol.replace('USDT', '');
-                      priceMap.set(baseSymbol, parseFloat(item.price));
-                  }
-              });
-          }
-
-          // Update assets
-          return currentAssets.map(asset => {
-              const binancePrice = priceMap.get(asset.symbol.toUpperCase());
-              if (binancePrice) {
-                  return { ...asset, current_price: binancePrice, source: 'CoinGecko + Binance' };
-              }
-              return asset;
-          });
-
-      } catch (e) {
-          console.warn("Binance API update failed:", e);
-          return currentAssets;
-      }
-  };
-
-  // 2. Fallback: Fetch from CoinPaprika
-  const fetchCoinPaprika = async (page: number, limit: number): Promise<AssetData[]> => {
-      try {
-          // CoinPaprika doesn't support pagination perfectly like CoinGecko in one call for markets without massive payload
-          // But 'tickers' endpoint is good.
-          const res = await fetch('https://api.coinpaprika.com/v1/tickers');
-          if (!res.ok) throw new Error("CoinPaprika Failed");
-          const data = await res.json();
-          
-          // Filter & Sort manually since endpoint returns all
-          // This is heavier but a good backup.
-          const sorted = data.sort((a: any, b: any) => a.rank - b.rank);
-          const start = (page - 1) * limit;
-          const pageData = sorted.slice(start, start + limit);
-
-          return pageData.map((coin: any) => ({
-              id: coin.id,
-              symbol: coin.symbol.toLowerCase(),
-              name: coin.name,
-              type: 'CRYPTO',
-              current_price: coin.quotes.USD.price,
-              market_cap: coin.quotes.USD.market_cap,
-              market_cap_rank: coin.rank,
-              total_volume: coin.quotes.USD.volume_24h,
-              price_change_percentage_24h: coin.quotes.USD.percent_change_24h,
-              price_change_percentage_7d_in_currency: coin.quotes.USD.percent_change_7d,
-              price_change_percentage_30d_in_currency: coin.quotes.USD.percent_change_30d,
-              price_change_percentage_1y_in_currency: coin.quotes.USD.percent_change_1y,
-              ath: coin.quotes.USD.ath_price,
-              ath_change_percentage: coin.quotes.USD.percent_from_price_ath,
-              high_24h: 0, // Not directly in tickers list
-              low_24h: 0,
-              total_supply: coin.total_supply,
-              circulating_supply: coin.circulating_supply,
-              source: 'CoinPaprika'
-          }));
-      } catch (e) {
-          console.error("CoinPaprika fetch failed", e);
-          return [];
-      }
-  };
-
   // --- Data Fetching Strategy ---
   useEffect(() => {
     // 1. Non-Crypto Handling (Static Data)
     if (activeCategory === 'FOREX') {
+        // Apply duplicate filter to static lists too
         let data = processAssets(FOREX_PAIRS);
+        
         setAllFetchedAssets(data);
+
+        // In TABLE view, show removed items so they can be unblocked. In GRID view, hide them.
         if (viewMode === 'GRID') {
             data = data.filter(a => !removedIds.has(a.id));
         }
+        
         if (showFavoritesOnly) data = data.filter(a => currentFavoritesSet.has(a.id));
         if (searchQuery) {
              const q = searchQuery.toLowerCase();
@@ -1033,15 +954,19 @@ const App: React.FC = () => {
         }
         setDisplayedAssets(data);
         setCryptoTotalCount(data.length);
-        setDataSource('Static');
         return;
     }
     if (activeCategory === 'STOCKS') {
+        // Apply duplicate filter to static lists too
         let data = processAssets(STOCK_DATA);
+        
         setAllFetchedAssets(data);
+
+        // In TABLE view, show removed items so they can be unblocked. In GRID view, hide them.
         if (viewMode === 'GRID') {
              data = data.filter(a => !removedIds.has(a.id));
         }
+        
         if (showFavoritesOnly) data = data.filter(a => currentFavoritesSet.has(a.id));
         if (searchQuery) {
              const q = searchQuery.toLowerCase();
@@ -1049,7 +974,6 @@ const App: React.FC = () => {
         }
         setDisplayedAssets(data);
         setCryptoTotalCount(data.length);
-        setDataSource('Static');
         return;
     }
 
@@ -1060,188 +984,208 @@ const App: React.FC = () => {
         setLoading(true);
         setScanProgress(0);
         setError(null);
-        let usedSource: DataSource = 'CoinGecko';
-
         try {
             let data: AssetData[] = [];
             
-            // --- TRY COINGECKO FIRST ---
-            try {
-                // CASE A: Gainers OR ATH
-                if (activeCategory === 'GAINERS' || activeCategory === 'ATH') {
-                    // Fetch Top 10,000 coins (40 pages x 250)
-                    const totalPagesToScan = 40; 
-                    let allCoins: any[] = [];
-                    let consecutiveFailures = 0;
+            // CASE A: Gainers OR ATH - Specific Logic to find Top Movers/Highest ATH
+            if (activeCategory === 'GAINERS' || activeCategory === 'ATH') {
+                // Fetch Top 10,000 coins (40 pages x 250)
+                const totalPagesToScan = 40; 
+                let allCoins: any[] = [];
+                let consecutiveFailures = 0;
+                
+                for (let p = 1; p <= totalPagesToScan; p++) {
+                    setScanProgress(p); // Update progress indicator
                     
-                    for (let p = 1; p <= totalPagesToScan; p++) {
-                        setScanProgress(p); // Update progress indicator
-                        if (consecutiveFailures >= 3) break;
+                    if (consecutiveFailures >= 3) {
+                        console.warn("Too many consecutive failures, stopping scan early.");
+                        break;
+                    }
 
+                    try {
+                        if (controller.signal.aborted) break;
+                        
+                        const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page=${p}&sparkline=false&price_change_percentage=24h`;
+                        
+                        let res = null;
                         try {
-                            if (controller.signal.aborted) break;
-                            const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page=${p}&sparkline=false&price_change_percentage=24h`;
-                            let res = await fetch(url, { signal: controller.signal });
-                            if (res.status === 429) {
-                                await new Promise(r => setTimeout(r, 5000));
-                                consecutiveFailures++; 
-                                continue; 
-                            }
-                            if (!res.ok) { consecutiveFailures++; continue; }
-                            
-                            const json = await res.json();
-                            if (Array.isArray(json) && json.length > 0) {
-                                allCoins = [...allCoins, ...json];
-                                consecutiveFailures = 0; 
-                            } else {
-                                consecutiveFailures++;
-                            }
-                            if (p !== totalPagesToScan) await new Promise(r => setTimeout(r, 1200)); 
-                        } catch (e: any) {
-                            if (e.name === 'AbortError') break;
+                            res = await fetch(url, { signal: controller.signal });
+                        } catch (e) {
+                            if (controller.signal.aborted) throw e;
+                            await new Promise(r => setTimeout(r, 2000));
+                            res = await fetch(url, { signal: controller.signal });
+                        }
+
+                        if (res && res.status === 429) {
+                            console.warn("Rate limit hit (429). Pausing...");
+                            await new Promise(r => setTimeout(r, 5000)); 
+                            consecutiveFailures++;
+                            continue;
+                        }
+                        
+                        if (!res || !res.ok) {
+                            consecutiveFailures++;
+                            continue;
+                        }
+                        
+                        const json = await res.json();
+                        if (Array.isArray(json)) {
+                            if (json.length === 0) break; 
+                            allCoins = [...allCoins, ...json];
+                            consecutiveFailures = 0; 
+                        } else {
                             consecutiveFailures++;
                         }
-                    }
+                        
+                        const delay = p < 5 ? 1200 : 1600;
+                        if (p !== totalPagesToScan) {
+                             await new Promise(r => setTimeout(r, delay)); 
+                        }
 
-                    if (allCoins.length === 0 && !controller.signal.aborted) throw new Error("No data from CoinGecko");
+                    } catch (e: any) {
+                        if (e.name !== 'AbortError') console.error(e);
+                        consecutiveFailures++;
+                        if (e.name === 'AbortError') break;
+                    }
+                }
+
+                if (allCoins.length === 0 && !controller.signal.aborted) {
+                     throw new Error("No data found (API Error)");
+                }
+                
+                const cleanedData = processAssets(allCoins);
+
+                let sorted = cleanedData;
+                if (activeCategory === 'GAINERS') {
+                     sorted = cleanedData.sort((a: any, b: any) => (b.price_change_percentage_24h || 0) - (a.price_change_percentage_24h || 0));
+                } else if (activeCategory === 'ATH') {
+                     sorted = cleanedData.sort((a: any, b: any) => (a.ath_change_percentage || 0) - (b.ath_change_percentage || 0));
+                }
+                
+                let filtered = sorted;
+                if (searchQuery) {
+                    const q = searchQuery.toLowerCase();
+                    filtered = filtered.filter((c: any) => c.symbol.toLowerCase().includes(q) || c.name.toLowerCase().includes(q));
+                }
+
+                if (showFavoritesOnly) {
+                    filtered = filtered.filter((c: any) => currentFavoritesSet.has(c.id));
+                }
+
+                setCryptoTotalCount(filtered.length);
+                const start = (currentPage - 1) * pageSize;
+                const rawPageData = filtered.slice(start, start + pageSize).map((c: any) => ({ ...c, type: 'CRYPTO' }));
+                
+                setAllFetchedAssets(rawPageData);
+                data = rawPageData;
+
+            // CASE B: Show Favorites Only (Standard Crypto)
+            } else if (showFavoritesOnly) {
+                const favIds = Array.from(currentFavoritesSet);
+                if (favIds.length === 0) {
+                    setDisplayedAssets([]);
+                    setAllFetchedAssets([]);
+                    setCryptoTotalCount(0);
+                    setLoading(false);
+                    return;
+                }
+                
+                const idsParam = favIds.join(',');
+                const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${idsParam}&order=market_cap_desc&sparkline=false&price_change_percentage=24h,7d,30d,1y`;
+                const res = await fetch(url, { signal: controller.signal });
+                const json = await res.json();
+                
+                let filtered = processAssets(json);
+
+                if (searchQuery) {
+                    const q = searchQuery.toLowerCase();
+                    filtered = filtered.filter((c: any) => c.symbol.toLowerCase().includes(q) || c.name.toLowerCase().includes(q));
+                }
+                
+                setCryptoTotalCount(filtered.length);
+                const start = (currentPage - 1) * pageSize;
+                const rawPageData = filtered.slice(start, start + pageSize).map((c: any) => ({ ...c, type: 'CRYPTO' }));
+                
+                setAllFetchedAssets(rawPageData);
+                data = rawPageData;
+            
+            } else {
+                // CASE C: Search Active (Rank or Text) for Standard Crypto
+                const rankQuery = parseInt(searchQuery);
+                
+                if (!isNaN(rankQuery) && rankQuery > 0) {
+                    const targetPage = Math.ceil(rankQuery / pageSize);
+                    const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${pageSize}&page=${targetPage}&sparkline=false&price_change_percentage=24h,7d,30d,1y`;
                     
-                    const cleanedData = processAssets(allCoins);
-                    let sorted = cleanedData;
-                    if (activeCategory === 'GAINERS') {
-                        sorted = cleanedData.sort((a: any, b: any) => (b.price_change_percentage_24h || 0) - (a.price_change_percentage_24h || 0));
-                    } else if (activeCategory === 'ATH') {
-                        sorted = cleanedData.sort((a: any, b: any) => (a.ath_change_percentage || 0) - (b.ath_change_percentage || 0));
-                    }
+                    const res = await fetch(url, { signal: controller.signal });
+                    if (!res.ok) throw new Error("API Error");
+                    const json = await res.json();
                     
-                    let filtered = sorted;
-                    if (searchQuery) {
-                        const q = searchQuery.toLowerCase();
-                        filtered = filtered.filter((c: any) => c.symbol.toLowerCase().includes(q) || c.name.toLowerCase().includes(q));
-                    }
-                    if (showFavoritesOnly) {
-                        filtered = filtered.filter((c: any) => currentFavoritesSet.has(c.id));
-                    }
+                    const cleaned = processAssets(json);
+                    const rawData = cleaned.filter((c:any) => c.market_cap_rank === rankQuery).map((c: any) => ({ ...c, type: 'CRYPTO' }));
+                    
+                    setAllFetchedAssets(rawData);
+                    data = rawData;
+                    setCryptoTotalCount(10000); 
 
-                    setCryptoTotalCount(filtered.length);
-                    const start = (currentPage - 1) * pageSize;
-                    const rawPageData = filtered.slice(start, start + pageSize).map((c: any) => ({ ...c, type: 'CRYPTO', source: 'CoinGecko' }));
-                    setAllFetchedAssets(rawPageData);
-                    data = rawPageData;
+                } else if (searchQuery.trim().length > 0) {
+                    // *** STANDARD COINGECKO SEARCH ***
+                    const searchRes = await fetch(`https://api.coingecko.com/api/v3/search?query=${searchQuery}`, { signal: controller.signal });
+                    const searchJson = await searchRes.json();
+                    const searchCoins = searchJson.coins || [];
 
-                // CASE B: Show Favorites Only
-                } else if (showFavoritesOnly) {
-                    const favIds = Array.from(currentFavoritesSet);
-                    if (favIds.length === 0) {
+                    if (searchCoins.length === 0) {
                         setDisplayedAssets([]);
                         setAllFetchedAssets([]);
                         setCryptoTotalCount(0);
                         setLoading(false);
                         return;
                     }
-                    const idsParam = favIds.join(',');
-                    const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${idsParam}&order=market_cap_desc&sparkline=false&price_change_percentage=24h,7d,30d,1y`;
-                    const res = await fetch(url, { signal: controller.signal });
-                    if (!res.ok) throw new Error("CG Favs Failed");
-                    const json = await res.json();
-                    
-                    let filtered = processAssets(json);
-                    if (searchQuery) {
-                        const q = searchQuery.toLowerCase();
-                        filtered = filtered.filter((c: any) => c.symbol.toLowerCase().includes(q) || c.name.toLowerCase().includes(q));
-                    }
-                    setCryptoTotalCount(filtered.length);
+
                     const start = (currentPage - 1) * pageSize;
-                    const rawPageData = filtered.slice(start, start + pageSize).map((c: any) => ({ ...c, type: 'CRYPTO', source: 'CoinGecko' }));
-                    setAllFetchedAssets(rawPageData);
-                    data = rawPageData;
-                
-                } else {
-                    // CASE C & D: Search or Default
-                    const rankQuery = parseInt(searchQuery);
-                    if (!isNaN(rankQuery) && rankQuery > 0) {
-                        // ... Rank Logic (simplified for brevity, keeps original structure conceptually)
-                        const targetPage = Math.ceil(rankQuery / pageSize);
-                        const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${pageSize}&page=${targetPage}&sparkline=false&price_change_percentage=24h,7d,30d,1y`;
-                        const res = await fetch(url, { signal: controller.signal });
-                        if (!res.ok) throw new Error("CG Rank Failed");
-                        const json = await res.json();
-                        const cleaned = processAssets(json);
-                        const rawData = cleaned.filter((c:any) => c.market_cap_rank === rankQuery).map((c: any) => ({ ...c, type: 'CRYPTO', source: 'CoinGecko' }));
+                    const pageCoins = searchCoins.slice(start, start + pageSize);
+                    const ids = pageCoins.map((c: any) => c.id).join(',');
+
+                    if (ids) {
+                        const marketsRes = await fetch(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids}&order=market_cap_desc&sparkline=false&price_change_percentage=24h,7d,30d,1y`, { signal: controller.signal });
+                        const marketsJson = await marketsRes.json();
+                        const rawData = processAssets(marketsJson).map((c: any) => ({ ...c, type: 'CRYPTO' }));
+                        
                         setAllFetchedAssets(rawData);
                         data = rawData;
-                        setCryptoTotalCount(10000); 
-                    } else if (searchQuery.trim().length > 0) {
-                        // ... Search Logic
-                        const searchRes = await fetch(`https://api.coingecko.com/api/v3/search?query=${searchQuery}`, { signal: controller.signal });
-                        const searchJson = await searchRes.json();
-                        const searchCoins = searchJson.coins || [];
-                        if (searchCoins.length === 0) {
-                            setDisplayedAssets([]); setAllFetchedAssets([]); setCryptoTotalCount(0); setLoading(false); return;
-                        }
-                        const start = (currentPage - 1) * pageSize;
-                        const pageCoins = searchCoins.slice(start, start + pageSize);
-                        const ids = pageCoins.map((c: any) => c.id).join(',');
-                        if (ids) {
-                            const marketsRes = await fetch(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids}&order=market_cap_desc&sparkline=false&price_change_percentage=24h,7d,30d,1y`, { signal: controller.signal });
-                            const marketsJson = await marketsRes.json();
-                            const rawData = processAssets(marketsJson).map((c: any) => ({ ...c, type: 'CRYPTO', source: 'CoinGecko' }));
-                            setAllFetchedAssets(rawData);
-                            data = rawData;
-                            setCryptoTotalCount(searchCoins.length);
-                        } else { data = []; setAllFetchedAssets([]); setCryptoTotalCount(0); }
+                        setCryptoTotalCount(searchCoins.length);
                     } else {
-                        // Default Page
-                        const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${pageSize}&page=${currentPage}&sparkline=false&price_change_percentage=24h,7d,30d,1y`;
-                        const res = await fetch(url, { signal: controller.signal });
-                        if (!res.ok) throw new Error("CG Default Failed");
-                        const json = await res.json();
-                        const cleaned = processAssets(json);
-                        const rawData = cleaned.map((c: any) => ({ ...c, type: 'CRYPTO', source: 'CoinGecko' }));
-                        setAllFetchedAssets(rawData);
-                        data = rawData;
-                        setCryptoTotalCount(10000); 
+                        data = [];
+                        setAllFetchedAssets([]);
+                        setCryptoTotalCount(0);
                     }
-                }
-            } catch (cgError) {
-                console.warn("CoinGecko failed, trying CoinPaprika...", cgError);
-                // --- FALLBACK TO COINPAPRIKA ---
-                // Only for Default Listing View to ensure continuity
-                if (activeCategory === 'CRYPTO' && !searchQuery && !showFavoritesOnly) {
-                    data = await fetchCoinPaprika(currentPage, pageSize);
-                    if (data.length > 0) {
-                        usedSource = 'CoinPaprika';
-                        setAllFetchedAssets(data);
-                        setCryptoTotalCount(5000); // Approximate
-                    } else {
-                        throw new Error("Both APIs Failed");
-                    }
+
+                // CASE D: Default Market View (Paginated)
                 } else {
-                    throw cgError; // Re-throw if context doesn't fit Paprika fallback (e.g. detailed search)
+                    const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${pageSize}&page=${currentPage}&sparkline=false&price_change_percentage=24h,7d,30d,1y`;
+                    const res = await fetch(url, { signal: controller.signal });
+                    if (!res.ok) throw new Error("Rate Limit or API Error");
+                    const json = await res.json();
+                    const cleaned = processAssets(json);
+                    const rawData = cleaned.map((c: any) => ({ ...c, type: 'CRYPTO' }));
+                    
+                    setAllFetchedAssets(rawData);
+                    data = rawData;
+                    setCryptoTotalCount(10000); 
                 }
             }
 
-            // --- SIMULTANEOUS API: BINANCE PRICE UPDATE ---
-            // If we have data (from Gecko or Paprika), try to update prices with Binance for real-time accuracy
-            if (data.length > 0) {
-                const updatedData = await updatePricesWithBinance(data);
-                data = updatedData;
-                // If updated, source is effectively mixed
-                if (usedSource === 'CoinGecko') usedSource = 'CoinGecko'; // Keep main source name but UI can show extra info
-            }
-
-            // --- SET FINAL STATE ---
             if (viewMode === 'TABLE') {
                 setDisplayedAssets(data);
             } else {
                 setDisplayedAssets(data.filter(a => !removedIds.has(a.id)));
             }
-            setDataSource(usedSource);
 
         } catch (err: any) {
             if (err.name !== 'AbortError') {
                 console.error(err);
                 if (displayedAssets.length === 0) {
-                    setError("خطا در دریافت اطلاعات (CoinGecko & Backup Failed)");
+                    setError("خطا در برقراری ارتباط با سرور. (لطفا دوباره تلاش کنید)");
                 }
             }
         } finally {
@@ -1472,8 +1416,6 @@ const App: React.FC = () => {
       if (asset.image) return asset.image;
       if (asset.type === 'FOREX') return 'https://img.icons8.com/color/48/currency-exchange.png';
       if (asset.type === 'STOCKS') return 'https://img.icons8.com/color/48/bullish.png';
-      // Fallback for CoinPaprika if no image provided in minimal fetch
-      if (asset.source === 'CoinPaprika' && !asset.image) return `https://coinpaprika.com/coin/${asset.id}/logo.png`; 
       return '';
   };
   
@@ -1819,26 +1761,13 @@ const App: React.FC = () => {
       {/* Main Content */}
       <main ref={mainContentRef} className="flex-grow p-4 md:p-6 bg-gray-50">
         
-        {/* Source Indicator */}
-        {!loading && activeCategory === 'CRYPTO' && (
-            <div className="flex justify-center mb-4">
-                <span className={`text-xs px-3 py-1 rounded-full border ${
-                    dataSource === 'CoinGecko' ? 'bg-green-50 text-green-700 border-green-200' : 
-                    dataSource === 'CoinPaprika' ? 'bg-orange-50 text-orange-700 border-orange-200' :
-                    'bg-gray-100 text-gray-600'
-                }`}>
-                    Data Source: {dataSource} {dataSource === 'CoinGecko' ? '+ Binance (Live)' : ''}
-                </span>
-            </div>
-        )}
-
         {/* Loading/Error States */}
         {loading && (
             <div className="fixed top-[70px] left-1/2 -translate-x-1/2 z-30 bg-blue-600 text-white px-4 py-1.5 rounded-full shadow-lg text-sm font-medium flex items-center gap-2 animate-pulse">
                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
                 {(activeCategory === 'GAINERS' || activeCategory === 'ATH') 
                     ? `اسکن ارزها (${scanProgress} از 40 صفحه)...` 
-                    : "بروزرسانی لیست (Multi-API)..."}
+                    : "بروزرسانی لیست..."}
             </div>
         )}
         {error && (
@@ -1969,9 +1898,6 @@ const App: React.FC = () => {
                             <div className="px-5 py-4 bg-gray-50 flex justify-between items-center border-b border-gray-100 shrink-0 h-[65px]">
                                <div className="flex items-center gap-1">
                                   <span className="text-gray-800 font-bold text-3xl">{formatCurrency(asset.current_price)}</span>
-                                  {asset.source === 'CoinGecko + Binance' && (
-                                      <span className="text-[10px] bg-yellow-100 text-yellow-800 px-1 rounded animate-pulse" title="قیمت لحظه‌ای از بایننس">Live</span>
-                                  )}
                                 </div>
                                <div className="flex items-center gap-1">
                                   <span className={`font-bold text-lg ${getPercentClass(asset.price_change_percentage_24h)} dir-ltr`}>
@@ -2238,10 +2164,7 @@ const App: React.FC = () => {
                                           </div>
                                       </div>
                                   </td>
-                                  <td className="px-4 py-3 font-medium text-gray-700">
-                                      {formatCurrency(asset.current_price)}
-                                      {asset.source?.includes('Binance') && <span className="inline-block w-1.5 h-1.5 bg-green-500 rounded-full ml-1 mb-1" title="Live"></span>}
-                                  </td>
+                                  <td className="px-4 py-3 font-medium text-gray-700">{formatCurrency(asset.current_price)}</td>
                                   <td className={`px-4 py-3 font-bold dir-ltr text-right ${getPercentClass(asset.price_change_percentage_24h)}`}>
                                       {fmtPct(asset.price_change_percentage_24h)}
                                   </td>
